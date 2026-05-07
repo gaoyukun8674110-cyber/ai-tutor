@@ -1,0 +1,112 @@
+import unittest
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.api.llm import router as llm_router
+from app.database import Base, get_db
+from app.services.chat_history import ChatHistoryService
+
+AUTH_HEADERS = {"X-API-Key": "local-dev-key"}
+
+
+class LlmHistorySearchApiTests(unittest.TestCase):
+    def setUp(self):
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(bind=engine)
+        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        self.db = self.SessionLocal()
+
+        app = FastAPI()
+
+        def override_db():
+            try:
+                yield self.db
+            finally:
+                pass
+
+        app.dependency_overrides[get_db] = override_db
+        app.include_router(llm_router)
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.db.close()
+
+    def test_search_conversations_endpoint_returns_matching_history(self):
+        service = ChatHistoryService(self.db)
+        created = service.save_exchange(
+            conversation_id=None,
+            user_message="Probability question",
+            assistant_message="Posterior probability updates the prior.",
+            prompt_profile="socratic",
+            provider="linkapi",
+            model="claude-haiku",
+            training_mode="focus",
+            user_id="local",
+        )
+
+        response = self.client.get(
+            "/api/llm/conversations/search",
+            params={"query": "posterior", "user_id": "learner-1"},
+            headers=AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        conversations = response.json()["conversations"]
+        self.assertEqual(len(conversations), 1)
+        self.assertEqual(conversations[0]["id"], created["id"])
+
+    def test_conversations_endpoint_returns_legacy_userless_history_for_local_user(self):
+        service = ChatHistoryService(self.db)
+        created = service.save_exchange(
+            conversation_id=None,
+            user_message="legacy statistics conversation",
+            assistant_message="saved before X-API-Key user scoping existed",
+            prompt_profile="three_stage",
+            provider="linkapi",
+            model="claude-haiku",
+            training_mode="focus",
+            user_id=None,
+        )
+
+        response = self.client.get("/api/llm/conversations", headers=AUTH_HEADERS)
+
+        self.assertEqual(response.status_code, 200)
+        conversations = response.json()["conversations"]
+        self.assertIn(created["id"], [item["id"] for item in conversations])
+
+    def test_export_conversation_endpoint_returns_markdown(self):
+        service = ChatHistoryService(self.db)
+        created = service.save_exchange(
+            conversation_id=None,
+            user_message="请解释置信区间",
+            assistant_message="置信区间是用抽样过程构造出的区间。",
+            prompt_profile="three_stage",
+            provider="linkapi",
+            model="claude-haiku",
+            training_mode="focus",
+            user_id="local",
+        )
+
+        response = self.client.get(
+            f"/api/llm/conversations/{created['id']}/export",
+            params={"user_id": "learner-1"},
+            headers=AUTH_HEADERS,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["filename"], "置信区间训练.md")
+        self.assertIn("# 置信区间训练", body["content"])
+        self.assertIn("请解释置信区间", body["content"])
+
+
+if __name__ == "__main__":
+    unittest.main()

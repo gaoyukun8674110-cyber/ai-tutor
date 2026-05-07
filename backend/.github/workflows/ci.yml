@@ -1,0 +1,40 @@
+name: AI Tutor CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      - run: mypy app
+      - run: python -m unittest discover -v
+
+  frontend:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ../AI Tutor front end
+      - name: Type-check frontend
+        run: npm run type-check
+        working-directory: ../AI Tutor front end
+      - name: Lint frontend
+        run: npm run lint
+        working-directory: ../AI Tutor front end
+      - name: Build frontend
+        run: npm run build
+        working-directory: ../AI Tutor front end

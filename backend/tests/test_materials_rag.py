@@ -1,0 +1,154 @@
+import io
+import tempfile
+import unittest
+import zipfile
+from pathlib import Path
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.database import Base
+from app.services.materials import (
+    HashEmbeddingProvider,
+    MaterialService,
+    chunk_text,
+    extract_text_from_file_bytes,
+)
+
+
+def build_docx_bytes(paragraphs):
+    document_xml = (
+        "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
+        "<w:document xmlns:w='http://schemas.openxmlformats.org/wordprocessingml/2006/main'>"
+        "<w:body>"
+        + "".join(f"<w:p><w:r><w:t>{paragraph}</w:t></w:r></w:p>" for paragraph in paragraphs)
+        + "</w:body></w:document>"
+    )
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+    return output.getvalue()
+
+
+def build_epub_bytes(chapters):
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr("mimetype", "application/epub+zip")
+        for index, chapter in enumerate(chapters, start=1):
+            archive.writestr(
+                f"OEBPS/chapter{index}.xhtml",
+                f"<html><body><h1>Chapter {index}</h1><p>{chapter}</p></body></html>",
+            )
+    return output.getvalue()
+
+
+def build_pdf_bytes(text):
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=300, height=300)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
+    )
+    stream = DecodedStreamObject()
+    escaped_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream.set_data(f"BT /F1 12 Tf 10 100 Td ({escaped_text}) Tj ET".encode("utf-8"))
+    page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
+    page[NameObject("/Contents")] = stream
+    output = io.BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+class MaterialRagTests(unittest.TestCase):
+    def setUp(self):
+        engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+        Base.metadata.create_all(bind=engine)
+        self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    def test_extract_text_supports_txt_markdown_docx_pdf_and_epub(self):
+        self.assertIn(
+            "Bayes theorem",
+            extract_text_from_file_bytes("notes.txt", b"Bayes theorem uses priors.", "text/plain"),
+        )
+        self.assertIn(
+            "gradient descent",
+            extract_text_from_file_bytes("lesson.md", b"# Lesson\n\nGradient descent", "text/markdown").lower(),
+        )
+        self.assertIn(
+            "Posterior probability",
+            extract_text_from_file_bytes(
+                "chapter.docx",
+                build_docx_bytes(["Posterior probability", "Prior probability"]),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ),
+        )
+        self.assertIn(
+            "industrial defect",
+            extract_text_from_file_bytes(
+                "book.epub",
+                build_epub_bytes(["industrial defect segmentation"]),
+                "application/epub+zip",
+            ),
+        )
+        self.assertIn(
+            "posterior probability",
+            extract_text_from_file_bytes(
+                "paper.pdf",
+                build_pdf_bytes("Bayes PDF posterior probability"),
+                "application/pdf",
+            ),
+        )
+
+    def test_chunk_text_preserves_source_order_and_limits_size(self):
+        text = "alpha beta gamma delta epsilon zeta"
+
+        chunks = chunk_text(text, chunk_size=18, overlap=6)
+
+        self.assertGreaterEqual(len(chunks), 2)
+        self.assertEqual(chunks[0]["chunk_index"], 0)
+        self.assertLessEqual(len(chunks[0]["content"]), 18)
+        self.assertIn("alpha", chunks[0]["content"])
+
+    def test_material_service_uploads_chunks_and_searches_relevant_context(self):
+        db = self.SessionLocal()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                service = MaterialService(
+                    db,
+                    embedding_provider=HashEmbeddingProvider(dimensions=32),
+                    upload_dir=Path(tmpdir),
+                    chunk_size=120,
+                    chunk_overlap=20,
+                )
+                material = service.create_material_from_bytes(
+                    filename="probability-notes.txt",
+                    content=b"Bayes theorem connects prior probability, likelihood, and posterior probability.",
+                    content_type="text/plain",
+                    user_id="learner-1",
+                )
+
+                results = service.search_materials(
+                    query="posterior prior probability",
+                    user_id="learner-1",
+                    top_k=3,
+                )
+
+            self.assertEqual(material["filename"], "probability-notes.txt")
+            self.assertEqual(material["status"], "ready")
+            self.assertGreaterEqual(material["chunk_count"], 1)
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["material_id"], material["id"])
+            self.assertIn("posterior probability", results[0]["content"])
+            self.assertGreater(results[0]["score"], 0)
+        finally:
+            db.close()
+
+
+if __name__ == "__main__":
+    unittest.main()

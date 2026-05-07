@@ -1,0 +1,800 @@
+"""LLM 服务 - 统一模型管理、多角色 Agent、工具集成"""
+from typing import Optional, Dict, Any, List
+from openai import OpenAI
+from app.config import settings
+from app.services.analytics import AnalyticsService
+from app.utils.math_tools import MathTools
+from app.utils.errors import safe_llm_error
+import time
+import json
+
+
+MATH_RENDERING_RULES = """数学公式输出规则：
+- 涉及数学、概率、统计、代数、微积分时，公式必须使用 LaTeX。
+- 行内公式使用 `$...$`，独立展示的公式使用 `$$...$$`。
+- 不要用纯文本模拟分数、指数、根号、求和或积分；优先使用 `\\frac`、`^`、`\\sqrt`、`\\sum`、`\\int` 等 LaTeX 写法。
+- 公式外的解释继续使用清晰的自然语言。"""
+
+
+class LLMService:
+    """LLM 服务"""
+    
+    def __init__(self, analytics: Optional[AnalyticsService] = None):
+        self.client = OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_BASE_URL,
+        ) if settings.OPENAI_API_KEY else None
+        self.analytics = analytics
+        self.math_tools = MathTools()
+        self._clients: Dict[str, OpenAI] = {}
+        
+        # Agent 角色定义
+        self.agent_prompts = {
+            "solver": """你是一个数学解题助手。你的任务是：
+1. 使用提供的数学工具（Sympy）来验证和计算
+2. 给出结构化的解题步骤
+3. 确保答案的准确性""",
+            
+            "tutor": """你是一个苏格拉底式的数学导师。你的任务是：
+1. 不直接给答案，而是通过提问引导学生思考
+2. 给出提示（hint），而不是完整解答
+3. 用通俗易懂的语言解释数学概念
+4. 鼓励学生，保持耐心和友好""",
+            
+            "diagnosis": """你是一个错误诊断专家。你的任务是：
+1. 对比学生的答案和标准答案
+2. 找出学生错误的具体位置和原因
+3. 解释为什么错了，以及正确的思路是什么
+4. 给出针对性的改进建议""",
+            
+            "pomodoro_coach": """你是一个学习教练。你的任务是：
+1. 在番茄钟开始和结束时给出鼓励性的话语
+2. 总结学习成果，给出正面反馈
+3. 提醒学生注意休息，保持学习节奏""",
+        }
+
+        self.prompt_profiles = {
+            "three_stage": {
+                "name": "三段式学习法",
+                "description": "先用二八原则规划核心知识，再用简单比喻解释概念，最后用费曼追问检测理解。",
+                "system_prompt": """你是我的学习系统，由三个模块组成：
+
+1. 学习设计师：
+当学生提出学习目标时，先根据二八原则，把目标拆成最小必要知识，只列出最关键的 20%，并说明这些知识分别解决什么问题。
+
+2. 概念解释师：
+当学生对某个概念不懂时，用生活中最简单的比喻解释。要求逻辑准确、语言简单，最好让 10 岁小学生也能理解，并给出对比例子。
+
+3. 费曼教练：
+当学生说“来费曼”时，你扮演一个完全不懂的新手，不断向学生提问，直到学生能把概念讲清楚。最后总结学生遗漏了哪些关键点。
+
+工作规则：
+- 不要一次性输出太多。
+- 先判断学生当前处于哪个阶段：规划、理解、还是检测。
+- 如果目标不清楚，先问 1-3 个关键问题。
+- 如果学生已经给出明确主题，直接开始。
+- 每次回答只推进一个小步骤，优先让学生真正理解，而不是堆信息。""",
+            },
+            "socratic": {
+                "name": "苏格拉底引导",
+                "description": "通过追问和提示引导学生自己推理，不直接给完整答案。",
+                "system_prompt": """你是一位苏格拉底式 AI Tutor。
+你的目标是帮助学生学会思考，而不是替学生完成所有任务。
+优先使用简短问题、分层提示和下一步引导。
+除非学生明确要求完整讲解，否则不要直接给最终答案。""",
+            },
+            "explain": {
+                "name": "概念讲解",
+                "description": "用清晰结构解释概念、步骤和原因。",
+                "system_prompt": """你是一位善于讲解概念的 AI Tutor。
+请先判断学生卡住的概念点，再用清晰、分层、通俗的方式解释。
+回答应包含关键思路、必要步骤和一个小例子。""",
+            },
+            "diagnose": {
+                "name": "错题诊断",
+                "description": "定位错误原因，区分概念、计算和方法问题。",
+                "system_prompt": """你是一位错题诊断 Tutor。
+请帮助学生定位错误发生在哪里、为什么错、应该如何修正。
+区分概念误解、计算失误、方法选择错误和审题问题。""",
+            },
+            "coach": {
+                "name": "学习教练",
+                "description": "结合番茄钟节奏提醒休息、复盘和继续学习。",
+                "system_prompt": """你是一位学习节奏教练。
+请结合当前番茄钟状态，帮助学生保持专注、合理休息、及时复盘。
+语气应简洁、鼓励、具体。""",
+            },
+            "exam": {
+                "name": "考试训练",
+                "description": "模拟考试环境，控制提示强度并强调限时训练。",
+                "system_prompt": """问题不必Q1，Q2，Q3，直接1，2，3就行；
+答案你留着，不要展示出来，后面我给你答案你直接给我判就行；
+题目的话要对齐雅思题目难度，在有情景的情况下出选择题，只需要有A，B选项就OK；
+是关键处出A，B选项就行，不是出A,B问句;题目15个起步；
+如果一个知识点下有几个小知识点的话要先针对每个对应的小知识点进行每个至少5题的小专项训练再接着对整个知识点做专项训练；
+出过一次的题不要出第二次;在提交答案之后要对答案进行对错判断并进行分析薄弱项；并且要求对薄弱项的知识点讲解能"一刀切";
+一刀切规则的时候要给一个简单的示例,不然我看不懂!如果发现哪里有薄弱项，那我们接下来就对薄弱项进行专项加强；
+每次出题记得把答案打乱。""",
+            },
+            "custom": {
+                "name": "自定义提示词",
+                "description": "使用后端配置或请求传入的自定义系统提示词。",
+                "system_prompt": "你是一位 AI Tutor。请根据当前后端配置的教学策略帮助学生学习。",
+            },
+        }
+
+    def _provider_configs(self) -> Dict[str, Dict[str, Any]]:
+        """Return backend-only provider configuration."""
+        return {
+            "openai": {
+                "name": "OpenAI",
+                "adapter": "openai-compatible",
+                "api_key": settings.OPENAI_API_KEY,
+                "base_url": settings.OPENAI_BASE_URL,
+                "default_model": settings.OPENAI_MODEL,
+                "models": [settings.OPENAI_MODEL, "gpt-4o-mini", "gpt-4o"],
+                "requires_api_key": True,
+                "implemented": True,
+            },
+            "deepseek": {
+                "name": "DeepSeek",
+                "adapter": "openai-compatible",
+                "api_key": settings.DEEPSEEK_API_KEY,
+                "base_url": settings.DEEPSEEK_BASE_URL,
+                "default_model": settings.DEEPSEEK_MODEL,
+                "models": [settings.DEEPSEEK_MODEL],
+                "requires_api_key": True,
+                "implemented": True,
+            },
+            "qwen": {
+                "name": "Qwen",
+                "adapter": "openai-compatible",
+                "api_key": settings.QWEN_API_KEY,
+                "base_url": settings.QWEN_BASE_URL,
+                "default_model": settings.QWEN_MODEL,
+                "models": [settings.QWEN_MODEL],
+                "requires_api_key": True,
+                "implemented": True,
+            },
+            "linkapi": {
+                "name": "LinkAPI",
+                "adapter": "openai-compatible",
+                "api_key": settings.LINKAPI_API_KEY,
+                "base_url": settings.LINKAPI_BASE_URL,
+                "default_model": settings.LINKAPI_MODEL,
+                "models": [
+                    settings.LINKAPI_MODEL,
+                    "claude-sonnet-4-20250514",
+                    "gpt-4o-mini",
+                    "deepseek-chat",
+                ],
+                "requires_api_key": True,
+                "implemented": True,
+            },
+            "ollama": {
+                "name": "Ollama",
+                "adapter": "openai-compatible",
+                "api_key": "ollama",
+                "base_url": settings.OLLAMA_BASE_URL,
+                "default_model": settings.OLLAMA_MODEL,
+                "models": [settings.OLLAMA_MODEL],
+                "requires_api_key": False,
+                "implemented": True,
+            },
+            "anthropic": {
+                "name": "Anthropic Claude",
+                "adapter": "native",
+                "api_key": settings.ANTHROPIC_API_KEY,
+                "base_url": None,
+                "default_model": settings.ANTHROPIC_MODEL,
+                "models": [settings.ANTHROPIC_MODEL],
+                "requires_api_key": True,
+                "implemented": False,
+            },
+            "gemini": {
+                "name": "Google Gemini",
+                "adapter": "native",
+                "api_key": settings.GEMINI_API_KEY,
+                "base_url": None,
+                "default_model": settings.GEMINI_MODEL,
+                "models": [settings.GEMINI_MODEL],
+                "requires_api_key": True,
+                "implemented": False,
+            },
+        }
+
+    def get_provider_metadata(self) -> Dict[str, Any]:
+        """Expose safe provider metadata to the frontend without API keys."""
+        providers = []
+        for provider_id, config in self._provider_configs().items():
+            has_credentials = bool(config["base_url"]) and (
+                not config["requires_api_key"] or bool(config["api_key"])
+            )
+            enabled = has_credentials and config["implemented"]
+            reason = None
+            if not has_credentials:
+                reason = "provider credentials are not configured"
+            elif not config["implemented"]:
+                reason = "provider adapter is not implemented yet"
+
+            providers.append(
+                {
+                    "id": provider_id,
+                    "name": config["name"],
+                    "adapter": config["adapter"],
+                    "enabled": enabled,
+                    "implemented": config["implemented"],
+                    "default_model": config["default_model"],
+                    "models": config["models"],
+                    "reason": reason,
+                }
+            )
+
+        return {"providers": providers}
+
+    def get_prompt_profiles(self) -> Dict[str, Any]:
+        """Return available Tutor teaching styles."""
+        return {
+            "profiles": [
+                {
+                    "id": profile_id,
+                    "name": profile["name"],
+                    "description": profile["description"],
+                }
+                for profile_id, profile in self.prompt_profiles.items()
+            ]
+        }
+
+    def _has_provider_credentials(self, config: Dict[str, Any]) -> bool:
+        return bool(config["base_url"]) and (
+            not config["requires_api_key"] or bool(config["api_key"])
+        )
+
+    def _resolve_provider_id(self, requested_provider: Optional[str], provider_configs: Dict[str, Dict[str, Any]]) -> Optional[str]:
+        provider_id = requested_provider or "auto"
+        if provider_id != "auto":
+            return provider_id
+
+        if settings.DEFAULT_LLM_PROVIDER != "auto":
+            return settings.DEFAULT_LLM_PROVIDER
+
+        for candidate_id, config in provider_configs.items():
+            if (
+                self._has_provider_credentials(config)
+                and config["implemented"]
+                and config["adapter"] == "openai-compatible"
+            ):
+                return candidate_id
+
+        return None
+
+    @staticmethod
+    def _latest_user_content(messages: List[Dict[str, str]]) -> str:
+        for message in reversed(messages):
+            if message.get("role") == "user" and message.get("content", "").strip():
+                return message.get("content", "").strip()
+        return ""
+
+    @staticmethod
+    def detect_learning_phase(student_message: Optional[str]) -> str:
+        text = (student_message or "").strip().lower()
+        if not text:
+            return "general"
+
+        if any(keyword in text for keyword in ["来费曼", "费曼", "feynman", "考考我", "测试我", "检测我"]):
+            return "feynman"
+
+        if any(
+            keyword in text
+            for keyword in [
+                "我想学",
+                "想学",
+                "学习目标",
+                "目标",
+                "计划",
+                "规划",
+                "怎么学",
+                "学习路线",
+                "路径",
+                "安排",
+                "二八",
+            ]
+        ):
+            return "planning"
+
+        if any(
+            keyword in text
+            for keyword in [
+                "不懂",
+                "是什么",
+                "什么意思",
+                "解释",
+                "讲一下",
+                "讲讲",
+                "举例",
+                "例子",
+                "为什么",
+                "区别",
+                "类比",
+                "换一种",
+            ]
+        ):
+            return "understanding"
+
+        return "general"
+
+    @staticmethod
+    def _learning_phase_instruction(phase: str) -> str:
+        instructions = {
+            "planning": "当前阶段是规划：按二八原则列出最关键的 20% 知识，并说明每个知识点解决什么问题；不要展开成大段课程。",
+            "understanding": "当前阶段是理解：用简单生活比喻解释概念，给一个对比例子，然后停下来确认学生是否理解。",
+            "feynman": "当前阶段是检测：扮演完全不懂的新手，一次只问一个追问，最后总结学生遗漏的关键点。",
+            "general": "当前阶段不明确：先根据学生问题判断阶段；如果目标不清楚，只问 1-3 个关键问题。",
+        }
+        return instructions.get(phase, instructions["general"])
+
+    @staticmethod
+    def _format_material_context(material_context: Any) -> List[str]:
+        if not isinstance(material_context, dict):
+            return []
+
+        raw_chunks = material_context.get("chunks")
+        if not isinstance(raw_chunks, list) or not raw_chunks:
+            return []
+
+        lines = [
+            "",
+            "当前检索到的学习资料片段：",
+            "请优先使用这些资料片段回答；引用资料时标出对应来源。如果资料片段没有覆盖学生问题，请明确说明当前资料没有覆盖，再用通用知识做引导或追问。",
+        ]
+        included = 0
+        for index, chunk in enumerate(raw_chunks[:5], start=1):
+            if not isinstance(chunk, dict):
+                continue
+            content = str(chunk.get("content") or "").strip()
+            if not content:
+                continue
+            source_label = str(chunk.get("source_label") or chunk.get("filename") or f"学习资料片段 {index}")
+            score = chunk.get("score")
+            score_text = f" · score {float(score):.3f}" if isinstance(score, (int, float)) else ""
+            lines.append(f"[{index}] {source_label}{score_text}")
+            lines.append(content)
+            included += 1
+
+        return lines if included else []
+
+    def _build_system_prompt(
+        self,
+        prompt_profile: str,
+        tutor_context: Optional[Dict[str, Any]] = None,
+        system_prompt_override: Optional[str] = None,
+    ) -> str:
+        profile = self.prompt_profiles.get(prompt_profile, self.prompt_profiles["socratic"])
+        if prompt_profile == "custom" and system_prompt_override:
+            prompt = system_prompt_override
+        else:
+            prompt = profile["system_prompt"]
+
+        prompt = f"{prompt}\n\n{MATH_RENDERING_RULES}"
+
+        if tutor_context:
+            context_lines = ["", "当前学习上下文："]
+            for key, value in tutor_context.items():
+                if key in {"material_context", "material_ids"}:
+                    continue
+                context_lines.append(f"- {key}: {value}")
+            context_lines.extend(self._format_material_context(tutor_context.get("material_context")))
+            prompt = f"{prompt}\n" + "\n".join(context_lines)
+
+        return prompt
+
+    def _should_inline_system_prompt(self, provider: str, model: str) -> bool:
+        """Some OpenAI-compatible gateways route Claude models to Anthropic Messages API.
+
+        Anthropic Messages does not allow a `system` role inside `messages`, so keep
+        the Tutor instructions by merging them into the first user message.
+        """
+        return provider == "linkapi" and model.lower().startswith("claude")
+
+    def _build_chat_messages(
+        self,
+        system_prompt: str,
+        messages: List[Dict[str, str]],
+        inline_system_prompt: bool = False,
+    ) -> List[Dict[str, str]]:
+        user_messages = [
+            {
+                "role": message.get("role", "user"),
+                "content": message.get("content", ""),
+            }
+            for message in messages
+            if message.get("role") != "system"
+        ]
+
+        if not inline_system_prompt:
+            return [{"role": "system", "content": system_prompt}, *user_messages]
+
+        if not user_messages:
+            return [{"role": "user", "content": system_prompt}]
+
+        first_message = user_messages[0]
+        first_message["role"] = "user"
+        first_message["content"] = (
+            f"请严格遵循以下 Tutor 行为规则：\n{system_prompt}\n\n"
+            f"学生消息：\n{first_message['content']}"
+        )
+        return user_messages
+
+    def _safe_log_llm_call(
+        self,
+        user_id: Optional[str],
+        session_id: Optional[int],
+        agent_type: str,
+        prompt_length: int,
+        response_length: int,
+        duration_ms: float,
+    ) -> None:
+        if not self.analytics:
+            return
+
+        try:
+            self.analytics.log_llm_call(
+                user_id=user_id,
+                session_id=session_id,
+                agent_type=agent_type,
+                prompt_length=prompt_length,
+                response_length=response_length,
+                duration_ms=duration_ms,
+            )
+        except Exception as error:
+            print(f"LLM analytics log failed: {error}")
+
+    def _get_provider_client(self, provider: str, provider_config: Dict[str, Any]) -> OpenAI:
+        client = self._clients.get(provider)
+        if client is None:
+            client = OpenAI(
+                api_key=provider_config["api_key"],
+                base_url=provider_config["base_url"],
+            )
+            self._clients[provider] = client
+        return client
+
+    def chat(
+        self,
+        provider: str,
+        model: Optional[str],
+        messages: List[Dict[str, str]],
+        prompt_profile: str = "three_stage",
+        tutor_context: Optional[Dict[str, Any]] = None,
+        system_prompt_override: Optional[str] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Generate a Tutor chat reply through the selected provider."""
+        provider_configs = self._provider_configs()
+        provider = self._resolve_provider_id(provider, provider_configs)
+        if not provider:
+            return {"error": "No configured LLM provider is available"}
+        if provider not in provider_configs:
+            return {"error": f"Unknown provider: {provider}"}
+
+        provider_config = provider_configs[provider]
+        has_credentials = self._has_provider_credentials(provider_config)
+        if not has_credentials:
+            return {"error": f"{provider_config['name']} is not configured"}
+        if not provider_config["implemented"]:
+            return {"error": f"{provider_config['name']} adapter is not implemented yet"}
+        if provider_config["adapter"] != "openai-compatible":
+            return {"error": f"{provider_config['name']} adapter is not supported yet"}
+
+        selected_model = model or provider_config["default_model"]
+        detected_learning_phase = self.detect_learning_phase(self._latest_user_content(messages))
+        learning_phase = detected_learning_phase
+        normalized_tutor_context = dict(tutor_context or {})
+        if prompt_profile == "three_stage":
+            previous_learning_phase = str(normalized_tutor_context.get("learning_phase") or "")
+            if detected_learning_phase == "general" and previous_learning_phase:
+                learning_phase = previous_learning_phase
+            normalized_tutor_context["learning_phase"] = learning_phase
+            normalized_tutor_context["learning_phase_instruction"] = self._learning_phase_instruction(learning_phase)
+
+        system_prompt = self._build_system_prompt(
+            prompt_profile=prompt_profile,
+            tutor_context=normalized_tutor_context,
+            system_prompt_override=system_prompt_override,
+        )
+        chat_messages = self._build_chat_messages(
+            system_prompt=system_prompt,
+            messages=messages,
+            inline_system_prompt=self._should_inline_system_prompt(provider, selected_model),
+        )
+
+        start_time = time.time()
+        try:
+            client = self._get_provider_client(provider, provider_config)
+            response = client.chat.completions.create(
+                model=selected_model,
+                messages=chat_messages,
+                temperature=settings.OPENAI_TEMPERATURE,
+                max_tokens=settings.OPENAI_MAX_TOKENS,
+            )
+            content = response.choices[0].message.content
+            duration_ms = (time.time() - start_time) * 1000
+            usage = getattr(response, "usage", None)
+            usage_payload = {}
+            if usage:
+                usage_payload = {
+                    "prompt_tokens": getattr(usage, "prompt_tokens", None),
+                    "completion_tokens": getattr(usage, "completion_tokens", None),
+                    "total_tokens": getattr(usage, "total_tokens", None),
+                }
+
+            self._safe_log_llm_call(
+                user_id=user_id,
+                session_id=session_id,
+                agent_type=f"tutor_chat:{prompt_profile}:{provider}",
+                prompt_length=sum(len(message["content"]) for message in chat_messages),
+                response_length=len(content or ""),
+                duration_ms=duration_ms,
+            )
+
+            return {
+                "message": {
+                    "role": "assistant",
+                    "content": content,
+                },
+                "provider": provider,
+                "model": selected_model,
+                "prompt_profile": prompt_profile,
+                "learning_phase": learning_phase,
+                "usage": usage_payload,
+                "latency_ms": duration_ms,
+            }
+        except Exception as e:
+            return {"error": safe_llm_error(e)}
+    
+    def generate_hint(
+        self,
+        question_content: str,
+        student_answer: Optional[str] = None,
+        step: int = 1,
+        user_id: Optional[str] = None,
+        session_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """生成提示（hint）"""
+        if not self.client:
+            return {"error": "OpenAI API key not configured"}
+        
+        prompt = f"""题目：{question_content}
+
+学生当前答案：{student_answer if student_answer else "尚未作答"}
+
+请给出第 {step} 步的提示（hint），不要直接给答案。提示应该：
+1. 引导学生思考下一步应该做什么
+2. 用提问的方式，而不是陈述
+3. 简短、精准，不超过 50 字"""
+        
+        start_time = time.time()
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": self.agent_prompts["tutor"]},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=200,
+            )
+            
+            hint = response.choices[0].message.content
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            # 记录日志
+            self._safe_log_llm_call(
+                user_id=user_id,
+                session_id=session_id,
+                agent_type="tutor_hint",
+                prompt_length=len(prompt),
+                response_length=len(hint),
+                duration_ms=duration_ms,
+            )
+            
+            return {
+                "hint": hint,
+                "step": step,
+                "agent_type": "tutor",
+            }
+        except Exception as e:
+            return {"error": safe_llm_error(e)}
+    
+    def explain_solution(
+        self,
+        question_content: str,
+        standard_solution: str,
+        solution_steps: Optional[List[Dict]] = None,
+        user_id: Optional[str] = None,
+        session_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """讲解标准解"""
+        if not self.client:
+            return {"error": "OpenAI API key not configured"}
+        
+        steps_text = ""
+        if solution_steps:
+            for i, step in enumerate(solution_steps, 1):
+                steps_text += f"\n步骤 {i}: {step.get('description', '')}"
+        
+        prompt = f"""题目：{question_content}
+
+标准答案：{standard_solution}
+解题步骤：{steps_text}
+
+请用通俗易懂的语言讲解这道题的解法，包括：
+1. 解题思路
+2. 关键步骤的解释
+3. 为什么这样做"""
+        
+        start_time = time.time()
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": self.agent_prompts["tutor"]},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=500,
+            )
+            
+            explanation = response.choices[0].message.content
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            self._safe_log_llm_call(
+                user_id=user_id,
+                session_id=session_id,
+                agent_type="tutor_explain",
+                prompt_length=len(prompt),
+                response_length=len(explanation),
+                duration_ms=duration_ms,
+            )
+            
+            return {
+                "explanation": explanation,
+                "agent_type": "tutor",
+            }
+        except Exception as e:
+            return {"error": safe_llm_error(e)}
+    
+    def diagnose_error(
+        self,
+        question_content: str,
+        student_answer: str,
+        correct_answer: str,
+        standard_solution: str,
+        user_id: Optional[str] = None,
+        session_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """诊断错误"""
+        if not self.client:
+            return {"error": "OpenAI API key not configured"}
+        
+        # 使用数学工具验证答案
+        math_verification = self.math_tools.verify_answer(student_answer, correct_answer)
+        
+        prompt = f"""题目：{question_content}
+
+学生答案：{student_answer}
+正确答案：{correct_answer}
+标准解法：{standard_solution}
+
+数学工具验证结果：{math_verification.get('result', 'unknown')}
+
+请诊断学生的错误：
+1. 具体哪里错了
+2. 错误的原因（概念理解错误？计算错误？方法错误？）
+3. 正确的思路应该是什么
+4. 给出改进建议"""
+        
+        start_time = time.time()
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": self.agent_prompts["diagnosis"]},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,  # 诊断需要更准确
+                max_tokens=400,
+            )
+            
+            diagnosis = response.choices[0].message.content
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            self._safe_log_llm_call(
+                user_id=user_id,
+                session_id=session_id,
+                agent_type="diagnosis",
+                prompt_length=len(prompt),
+                response_length=len(diagnosis),
+                duration_ms=duration_ms,
+            )
+            
+            return {
+                "diagnosis": diagnosis,
+                "error_type": self._extract_error_type(diagnosis),
+                "math_verification": math_verification,
+                "agent_type": "diagnosis",
+            }
+        except Exception as e:
+            return {"error": safe_llm_error(e)}
+    
+    def session_summary(
+        self,
+        session_stats: Dict[str, Any],
+        user_id: Optional[str] = None,
+        session_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """生成 Session 总结"""
+        if not self.client:
+            return {"error": "OpenAI API key not configured"}
+        
+        prompt = f"""本次训练 Session 统计：
+- 总题数：{session_stats.get('total_questions', 0)}
+- 正确数：{session_stats.get('correct_count', 0)}
+- 正确率：{session_stats.get('correct_rate', 0):.1%}
+- 平均用时：{session_stats.get('average_time', 0):.1f} 秒
+
+请生成一段鼓励性的总结，包括：
+1. 肯定学生的努力
+2. 指出进步的地方
+3. 给出下一步学习建议
+4. 保持积极正面的语调"""
+        
+        start_time = time.time()
+        try:
+            response = self.client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": self.agent_prompts["pomodoro_coach"]},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.8,
+                max_tokens=300,
+            )
+            
+            summary = response.choices[0].message.content
+            
+            duration_ms = (time.time() - start_time) * 1000
+            
+            self._safe_log_llm_call(
+                user_id=user_id,
+                session_id=session_id,
+                agent_type="pomodoro_coach",
+                prompt_length=len(prompt),
+                response_length=len(summary),
+                duration_ms=duration_ms,
+            )
+            
+            return {
+                "summary": summary,
+                "agent_type": "pomodoro_coach",
+            }
+        except Exception as e:
+            return {"error": safe_llm_error(e)}
+    
+    def _extract_error_type(self, diagnosis: str) -> str:
+        """从诊断文本中提取错误类型"""
+        diagnosis_lower = diagnosis.lower()
+        
+        if "概念" in diagnosis or "理解" in diagnosis:
+            return "concept_error"
+        elif "计算" in diagnosis or "运算" in diagnosis:
+            return "calculation_error"
+        elif "方法" in diagnosis or "思路" in diagnosis:
+            return "method_error"
+        else:
+            return "unknown"
+

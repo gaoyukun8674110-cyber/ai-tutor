@@ -1,0 +1,6 @@
+Generic single-database configuration with an async dbapi.
+
+This is a minimal Alembic environment.  For full documentation visit:
+
+https://alembic.sqlalchemy.org/
+
