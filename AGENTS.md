@@ -2,6 +2,7 @@
 
 ## Repository Layout
 
+- Canonical workspace: `H:\ai-tutor`. Treat old sibling folders such as `H:\AI Tutor Backed` and `H:\AI Tutor front end` as historical sources only; do not land new fixes there.
 - `backend/` contains the FastAPI service, SQLAlchemy models, Alembic setup, RAG/material services, LLM proxy, eval scaffold, and Python tests.
 - `frontend/` contains the Vite + React application, UI components, API client, frontend scripts, and TypeScript configuration.
 - `docs/` is for cross-project notes that apply to the whole monorepo.
@@ -26,6 +27,6 @@
 
 - API keys must stay in backend `.env` files, never in frontend code.
 - Browser calls must go through `frontend/src/utils/apiClient.ts`.
-- The frontend defaults to `http://localhost:8000`; the backend defaults to allowing `http://localhost:4173`.
+- The frontend defaults to `http://localhost:8001`, matching `backend/start.py`; the backend defaults to allowing `http://localhost:4173`.
 - Keep backend and frontend API contract changes in the same commit when they depend on each other.
 - Do not commit local databases, uploaded materials, virtual environments, dependency directories, or build output.

@@ -38,6 +38,7 @@ interface TutorSidebarProps {
   isUploadingMaterial: boolean;
   materialError: string | null;
   loadError: string | null;
+  historyLoadError: string | null;
   remainingSeconds: number;
   timerState: TimerState;
   isRunning: boolean;
@@ -89,6 +90,14 @@ function formatHistoryMeta(item: TutorConversationSummary, language: Language) {
   return `${item.message_count} messages${dateText ? ` · ${dateText}` : ''}`;
 }
 
+function sidebarCardStyle(tokens: ThemeTokens) {
+  return {
+    background: tokens.surfaceAccent,
+    border: tokens.borderSubtle,
+    boxShadow: tokens.shadowSoft,
+  };
+}
+
 export function TutorSidebar({
   sidebarOpen,
   sidebarWidth,
@@ -102,6 +111,7 @@ export function TutorSidebar({
   isUploadingMaterial,
   materialError,
   loadError,
+  historyLoadError,
   remainingSeconds,
   timerState,
   isRunning,
@@ -208,13 +218,13 @@ export function TutorSidebar({
 
         <div className="pt-2">
           <div className="px-3 pb-1 text-xs" style={{ color: tokens.textMuted }}>{t('配置', 'Settings')}</div>
-          <label className="block rounded-xl px-3 py-2 hover:bg-[var(--ai-hover-surface)]">
-            <span className="mb-1 flex items-center gap-2 text-[13px]" style={{ color: tokens.textSecondary }}>
+          <label className="block rounded-md px-3 py-2 transition-colors hover:bg-[var(--ai-hover-surface)]" style={sidebarCardStyle(tokens)}>
+            <span className="mb-2 flex items-center gap-2 text-[13px]" style={{ color: tokens.textSecondary }}>
               <MessageSquareText className="h-4 w-4" />
               {t('教学策略', 'Profile')}
             </span>
             <Select value={selectedProfile} onValueChange={onSelectedProfileChange}>
-              <SelectTrigger className="h-8 border-transparent bg-transparent hover:bg-[var(--ai-input-surface)] focus:bg-[var(--ai-input-surface)]" style={{ color: tokens.textPrimary }}>
+              <SelectTrigger className="h-8 bg-[var(--ai-input-surface)] hover:bg-[var(--ai-input-surface)] focus:bg-[var(--ai-input-surface)]" style={{ color: tokens.textPrimary, border: tokens.borderSubtle }}>
                 <SelectValue placeholder={t('选择策略', 'Choose profile')} />
               </SelectTrigger>
               <SelectContent>
@@ -237,7 +247,7 @@ export function TutorSidebar({
             />
           )}
 
-          <div className="mt-2 rounded-md px-3 py-2 transition-colors hover:bg-[var(--ai-hover-surface)]" style={{ background: tokens.surfaceAccent, border: tokens.borderSubtle }}>
+          <div className="mt-2 rounded-md px-3 py-2 transition-colors hover:bg-[var(--ai-hover-surface)]" style={sidebarCardStyle(tokens)}>
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-2 text-[13px]" style={{ color: tokens.textSecondary }}>
                 <BookOpen className="h-4 w-4 shrink-0" />
@@ -294,7 +304,7 @@ export function TutorSidebar({
             )}
           </div>
 
-          <div className="rounded-xl px-3 py-2 hover:bg-[var(--ai-hover-surface)]">
+          <div className="mt-2 rounded-md px-3 py-2 transition-colors hover:bg-[var(--ai-hover-surface)]" style={sidebarCardStyle(tokens)}>
             <div className="mb-2 flex items-center justify-between">
               <span className="flex items-center gap-2 text-[13px]" style={{ color: tokens.textSecondary }}>
                 <Clock3 className="h-4 w-4" />
@@ -369,9 +379,11 @@ export function TutorSidebar({
           </div>
         ) : (
           <div className="rounded-xl px-3 py-3 text-sm leading-5" style={{ color: tokens.textMuted }}>
-            {historySearchOpen && historySearchQuery.trim()
-              ? t('没有匹配的学习记录', 'No matching study sessions')
-              : t('还没有学习记录', 'No study sessions yet')}
+            {historyLoadError
+              ? t('学习记录暂时无法同步，请确认后端服务已启动。', 'Study sessions are temporarily unavailable. Check that the backend is running.')
+              : historySearchOpen && historySearchQuery.trim()
+                ? t('没有匹配的学习记录', 'No matching study sessions')
+                : t('还没有学习记录', 'No study sessions yet')}
           </div>
         )}
       </div>

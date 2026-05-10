@@ -15,6 +15,7 @@
     "isolatedModules": true,
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { BookOpen, Clock, Target, TimerReset, TrendingUp } from 'lucide-react';
 import type { DashboardWeekDay } from '../utils/dashboardApi';
 import { cardSurfaceStyle, panelSurfaceStyle } from '../utils/glassStyles';
+import { parseLocalDateKey } from '../utils/dateKey';
 import { useSettings } from '../utils/settings';
 
 interface StudyStatsProps {
@@ -45,8 +46,8 @@ export function StudyStats({
   const weeklyData = useMemo(
     () =>
       persistedWeeklyData.length > 0
-        ? persistedWeeklyData.map((item) => {
-            const parsedDate = new Date(`${item.date}T00:00:00`);
+          ? persistedWeeklyData.map((item) => {
+            const parsedDate = parseLocalDateKey(item.date);
             const dayKey = jsDayToKey[parsedDate.getDay()] || todayKey;
             return {
               key: item.date,

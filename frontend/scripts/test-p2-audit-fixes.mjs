@@ -15,16 +15,28 @@ assert.match(debounceSource, /setTimeout/);
 assert.match(debounceSource, /clearTimeout/);
 
 const tutorSource = readFileSync('src/components/TutorChatWorkspace.tsx', 'utf8');
-assert.match(tutorSource, /useDebouncedValue/);
-assert.match(tutorSource, /debouncedHistorySearchQuery/);
-assert.match(tutorSource, /getUserFacingError/);
+assert.doesNotMatch(tutorSource, /Promise\.all\(\[\s*fetchPromptProfiles[\s\S]*fetchTutorConversations[\s\S]*fetchStudyMaterials/);
+
+const tutorChatHookSource = readFileSync('src/features/tutor/useTutorChat.ts', 'utf8');
+assert.match(tutorChatHookSource, /FALLBACK_PROMPT_PROFILES/);
+assert.match(tutorChatHookSource, /getUserFacingError/);
+
+const tutorHistoryHookSource = readFileSync('src/features/tutor/useTutorHistory.ts', 'utf8');
+assert.match(tutorHistoryHookSource, /useDebouncedValue/);
+assert.match(tutorHistoryHookSource, /debouncedHistorySearchQuery/);
+
+const chatApiSource = readFileSync('src/utils/chatApi.ts', 'utf8');
+assert.match(chatApiSource, /FALLBACK_PROMPT_PROFILES/);
+assert.match(chatApiSource, /id: 'three_stage'/);
+
+const dashboardPageSource = readFileSync('src/pages/DashboardPage.tsx', 'utf8');
+assert.doesNotMatch(dashboardPageSource, /getUserFacingError/);
+assert.doesNotMatch(dashboardPageSource, /Failed to fetch/);
 
 const topNavbarSource = readFileSync('src/components/TopNavbar.tsx', 'utf8');
-assert.match(topNavbarSource, /showPlaceholder/);
-assert.match(topNavbarSource, /setNotice/);
-assert.match(topNavbarSource, /onClick=\{\(\) => showPlaceholder\(link\.label\)\}/);
-assert.match(topNavbarSource, /onClick=\{\(\) => showPlaceholder\(item\.label\)\}/);
-assert.match(topNavbarSource, /showPlaceholder\(t\('Log out'/);
+assert.match(topNavbarSource, /toggleLanguage/);
+assert.match(topNavbarSource, /toggleTheme/);
+assert.doesNotMatch(topNavbarSource, /href="#"/);
 
 const settingsSource = readFileSync('src/utils/settings.tsx', 'utf8');
 assert.match(settingsSource, /chatUserBubble/);
@@ -53,25 +65,25 @@ assert.equal(existsSync('src/components/StudyGoals.tsx'), false);
 assert.equal(existsSync('src/components/StartTraining.tsx'), false);
 assert.equal(existsSync('src/components/figma/ImageWithFallback.tsx'), false);
 
-const backendErrors = readFileSync('../AI Tutor/app/utils/errors.py', 'utf8');
+const backendErrors = readFileSync('../backend/app/utils/errors.py', 'utf8');
 assert.match(backendErrors, /def public_error/);
 assert.match(backendErrors, /async def http_exception_handler/);
 assert.match(backendErrors, /async def unhandled_exception_handler/);
 assert.match(backendErrors, /def safe_llm_error/);
 
-const backendMain = readFileSync('../AI Tutor/app/main.py', 'utf8');
+const backendMain = readFileSync('../backend/app/main.py', 'utf8');
 assert.match(backendMain, /add_exception_handler\(StarletteHTTPException/);
 assert.match(backendMain, /add_exception_handler\(Exception/);
 
-const backendLlmService = readFileSync('../AI Tutor/app/services/llm_service.py', 'utf8');
+const backendLlmService = readFileSync('../backend/app/services/llm_service.py', 'utf8');
 assert.match(backendLlmService, /self\._clients: Dict\[str, OpenAI\]/);
 assert.match(backendLlmService, /def _get_provider_client/);
 assert.match(backendLlmService, /safe_llm_error/);
 
-const backendLlmApi = readFileSync('../AI Tutor/app/api/llm.py', 'utf8');
+const backendLlmApi = readFileSync('../backend/app/api/llm.py', 'utf8');
 assert.match(backendLlmApi, /def _prepare_tutor_context/);
 assert.match(backendLlmApi, /def _build_model_messages/);
 assert.match(backendLlmApi, /def _finalize_conversation_response/);
 
-const backendMaterials = readFileSync('../AI Tutor/app/services/materials.py', 'utf8');
+const backendMaterials = readFileSync('../backend/app/services/materials.py', 'utf8');
 assert.match(backendMaterials, /\.strip\("\._"\) or "material"/);

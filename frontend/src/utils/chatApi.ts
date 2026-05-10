@@ -17,6 +17,44 @@ export interface PromptProfile {
   description: string;
 }
 
+export const FALLBACK_PROMPT_PROFILES: PromptProfile[] = [
+  {
+    id: 'three_stage',
+    name: '三段式学习法',
+    description: '先规划核心知识，再解释概念，最后用费曼追问检测理解。',
+  },
+  {
+    id: 'socratic',
+    name: '苏格拉底引导',
+    description: '通过问题一步步引导你自己发现解法。',
+  },
+  {
+    id: 'explain',
+    name: '概念讲解',
+    description: '用简单语言和例子解释知识点。',
+  },
+  {
+    id: 'diagnose',
+    name: '错因诊断',
+    description: '检查答案并定位薄弱点。',
+  },
+  {
+    id: 'coach',
+    name: '学习教练',
+    description: '安排下一步学习行动。',
+  },
+  {
+    id: 'exam',
+    name: '考试训练',
+    description: '按考试节奏进行限时训练。',
+  },
+  {
+    id: 'custom',
+    name: '自定义提示词',
+    description: '使用你输入的系统提示词。',
+  },
+];
+
 export type LearningPhase = 'planning' | 'understanding' | 'feynman' | 'general';
 
 export interface ChatMessagePayload {
@@ -152,8 +190,11 @@ export async function fetchTutorConversation(conversationId: number, options?: A
   return apiFetch<TutorConversationDetail>(`/api/llm/conversations/${conversationId}`, options);
 }
 
-export async function deleteTutorConversation(conversationId: number, options?: ApiRequestOptions): Promise<void> {
-  await apiFetch<{ deleted: boolean }>(`/api/llm/conversations/${conversationId}`, {
+export async function deleteTutorConversation(
+  conversationId: number,
+  options?: ApiRequestOptions,
+): Promise<{ deleted: boolean }> {
+  return apiFetch<{ deleted: boolean }>(`/api/llm/conversations/${conversationId}`, {
     ...options,
     method: 'DELETE',
   });

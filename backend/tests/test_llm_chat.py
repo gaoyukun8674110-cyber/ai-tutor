@@ -354,6 +354,24 @@ class LLMChatTests(unittest.TestCase):
         self.assertEqual(result["error"]["code"], "llm_provider_error")
         self.assertNotIn("sk-secret", str(result))
 
+    def test_safe_log_llm_call_uses_warning_logger_when_analytics_fails(self):
+        analytics = SimpleNamespace(
+            log_llm_call=lambda **kwargs: (_ for _ in ()).throw(RuntimeError("analytics unavailable"))
+        )
+        service = LLMService(analytics=analytics)
+
+        with patch.object(llm_module, "logger") as fake_logger:
+            service._safe_log_llm_call(
+                user_id="learner-1",
+                session_id=1,
+                agent_type="tutor_chat:socratic:openai",
+                prompt_length=10,
+                response_length=20,
+                duration_ms=12.5,
+            )
+
+        fake_logger.warning.assert_called_once()
+
 
 
 if __name__ == "__main__":

@@ -13,10 +13,17 @@ from typing import Any, Protocol
 from xml.etree import ElementTree
 
 from openai import OpenAI
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models.materials import StudyMaterial, StudyMaterialChunk
+from app.services.vector_index import (
+    PersistentVectorIndex,
+    VectorIndexItem,
+    build_snapshot,
+    search_snapshot,
+)
 
 
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".docx", ".pdf", ".epub"}
@@ -229,6 +236,7 @@ class MaterialService:
         self.upload_dir = upload_dir or Path(settings.RAG_UPLOAD_DIR)
         self.chunk_size = chunk_size or settings.RAG_CHUNK_SIZE
         self.chunk_overlap = chunk_overlap if chunk_overlap is not None else settings.RAG_CHUNK_OVERLAP
+        self.vector_index = PersistentVectorIndex(self.upload_dir / ".vector-index.json")
 
     @property
     def embedding_mode(self) -> str:
@@ -283,6 +291,7 @@ class MaterialService:
 
         self.db.commit()
         self.db.refresh(material)
+        self._rebuild_vector_index()
         return self._material_payload(material)
 
     def create_pending_material_from_bytes(
@@ -351,6 +360,7 @@ class MaterialService:
             material.updated_at = now
             self.db.commit()
             self.db.refresh(material)
+            self._rebuild_vector_index()
             return self._material_payload(material)
         except Exception as error:
             material.status = "failed"
@@ -362,7 +372,7 @@ class MaterialService:
     def list_materials(self, user_id: str | None = None) -> list[dict[str, Any]]:
         query = self.db.query(StudyMaterial)
         if user_id:
-            query = query.filter(StudyMaterial.user_id == user_id)
+            query = query.filter(self._user_scope_filter(user_id))
         return [
             self._material_payload(material)
             for material in query.order_by(StudyMaterial.updated_at.desc(), StudyMaterial.id.desc()).all()
@@ -380,39 +390,110 @@ class MaterialService:
             return []
         top_k = max(1, min(top_k or settings.RAG_TOP_K, 10))
         query_vector = self.embedding_provider.embed(cleaned_query)
+        snapshot = self._load_or_rebuild_vector_index()
+        search_user_id = user_id
+        allowed_user_ids: set[str | None] | None = None
+        if user_id == settings.DEFAULT_AUTH_USER_ID:
+            search_user_id = None
+            allowed_user_ids = {user_id, None}
+        chunk_scores = search_snapshot(
+            snapshot,
+            query_vector=query_vector,
+            top_k=top_k,
+            user_id=search_user_id,
+            material_ids=set(material_ids) if material_ids else None,
+            allowed_user_ids=allowed_user_ids,
+        )
+        if not chunk_scores:
+            return []
 
-        chunk_query = self.db.query(StudyMaterialChunk).join(StudyMaterial)
-        if user_id:
-            chunk_query = chunk_query.filter(StudyMaterial.user_id == user_id)
-        chunk_query = chunk_query.filter(StudyMaterial.status == "ready")
-        if material_ids:
-            chunk_query = chunk_query.filter(StudyMaterial.id.in_(material_ids))
-
-        candidates = (
-            chunk_query.order_by(StudyMaterialChunk.created_at.desc(), StudyMaterialChunk.id.desc())
-            .limit(settings.RAG_SEARCH_CANDIDATE_LIMIT)
+        score_by_chunk_id = {
+            chunk_id: round(max(0.0, 1 - ((distance * distance) / 2)), 6)
+            for chunk_id, distance in chunk_scores
+        }
+        ordered_chunk_ids = [chunk_id for chunk_id, _distance in chunk_scores]
+        chunks = (
+            self.db.query(StudyMaterialChunk)
+            .join(StudyMaterial)
+            .filter(StudyMaterial.status == "ready", StudyMaterialChunk.id.in_(ordered_chunk_ids))
             .all()
         )
-
-        scored = []
-        for chunk in candidates:
-            score = cosine_similarity(query_vector, json.loads(chunk.embedding_json))
-            if score > 0:
-                scored.append((score, chunk))
-
-        scored.sort(key=lambda item: item[0], reverse=True)
+        chunk_by_id = {chunk.id: chunk for chunk in chunks}
         return [
             {
-                "chunk_id": chunk.id,
-                "material_id": chunk.material_id,
-                "filename": chunk.material.filename,
-                "source_label": chunk.source_label,
-                "content": chunk.content,
-                "score": round(score, 6),
+                "chunk_id": chunk_by_id[chunk_id].id,
+                "material_id": chunk_by_id[chunk_id].material_id,
+                "filename": chunk_by_id[chunk_id].material.filename,
+                "source_label": chunk_by_id[chunk_id].source_label,
+                "content": chunk_by_id[chunk_id].content,
+                "score": score_by_chunk_id[chunk_id],
                 "embedding_mode": self.embedding_mode,
             }
-            for score, chunk in scored[:top_k]
+            for chunk_id in ordered_chunk_ids
+            if chunk_id in chunk_by_id
         ]
+
+    def _user_scope_filter(self, user_id: str):
+        if user_id == settings.DEFAULT_AUTH_USER_ID:
+            return or_(StudyMaterial.user_id == user_id, StudyMaterial.user_id.is_(None))
+        return StudyMaterial.user_id == user_id
+
+    def _ready_chunk_stats(self) -> tuple[int, int]:
+        ready_chunk_count, max_chunk_id = (
+            self.db.query(
+                func.count(StudyMaterialChunk.id),
+                func.max(StudyMaterialChunk.id),
+            )
+            .join(StudyMaterial)
+            .filter(StudyMaterial.status == "ready")
+            .one()
+        )
+        return int(ready_chunk_count or 0), int(max_chunk_id or 0)
+
+    def _indexable_chunks(self) -> list[VectorIndexItem]:
+        chunks = (
+            self.db.query(StudyMaterialChunk, StudyMaterial.user_id)
+            .join(StudyMaterial)
+            .filter(StudyMaterial.status == "ready")
+            .all()
+        )
+        items: list[VectorIndexItem] = []
+        for chunk, user_id in chunks:
+            vector = json.loads(chunk.embedding_json)
+            if not isinstance(vector, list) or len(vector) == 0:
+                continue
+            items.append(
+                VectorIndexItem(
+                    chunk_id=int(chunk.id),
+                    material_id=int(chunk.material_id),
+                    user_id=user_id,
+                    vector=[float(value) for value in vector],
+                )
+            )
+        return items
+
+    def _rebuild_vector_index(self) -> dict:
+        items = self._indexable_chunks()
+        ready_chunk_count, max_chunk_id = self._ready_chunk_stats()
+        snapshot = build_snapshot(
+            items,
+            embedding_mode=self.embedding_mode,
+            ready_chunk_count=ready_chunk_count,
+            max_chunk_id=max_chunk_id,
+        )
+        self.vector_index.save(snapshot)
+        return snapshot
+
+    def _load_or_rebuild_vector_index(self) -> dict:
+        ready_chunk_count, max_chunk_id = self._ready_chunk_stats()
+        snapshot = self.vector_index.load()
+        if (
+            snapshot is None
+            or int(snapshot.get("ready_chunk_count") or 0) != ready_chunk_count
+            or int(snapshot.get("max_chunk_id") or 0) != max_chunk_id
+        ):
+            return self._rebuild_vector_index()
+        return snapshot
 
     def _material_payload(self, material: StudyMaterial) -> dict[str, Any]:
         return {

@@ -1,12 +1,17 @@
 """LLM 服务 - 统一模型管理、多角色 Agent、工具集成"""
+import json
+import logging
+import time
+from threading import Lock
 from typing import Optional, Dict, Any, List
 from openai import OpenAI
 from app.config import settings
 from app.services.analytics import AnalyticsService
 from app.utils.math_tools import MathTools
 from app.utils.errors import safe_llm_error
-import time
-import json
+
+
+logger = logging.getLogger(__name__)
 
 
 MATH_RENDERING_RULES = """数学公式输出规则：
@@ -27,6 +32,7 @@ class LLMService:
         self.analytics = analytics
         self.math_tools = MathTools()
         self._clients: Dict[str, OpenAI] = {}
+        self._client_lock = Lock()
         
         # Agent 角色定义
         self.agent_prompts = {
@@ -433,12 +439,14 @@ class LLMService:
         prompt_length: int,
         response_length: int,
         duration_ms: float,
+        analytics: Optional[AnalyticsService] = None,
     ) -> None:
-        if not self.analytics:
+        analytics_service = analytics or self.analytics
+        if not analytics_service:
             return
 
         try:
-            self.analytics.log_llm_call(
+            analytics_service.log_llm_call(
                 user_id=user_id,
                 session_id=session_id,
                 agent_type=agent_type,
@@ -447,16 +455,19 @@ class LLMService:
                 duration_ms=duration_ms,
             )
         except Exception as error:
-            print(f"LLM analytics log failed: {error}")
+            logger.warning("LLM analytics log failed: %s", error, exc_info=error)
 
     def _get_provider_client(self, provider: str, provider_config: Dict[str, Any]) -> OpenAI:
         client = self._clients.get(provider)
         if client is None:
-            client = OpenAI(
-                api_key=provider_config["api_key"],
-                base_url=provider_config["base_url"],
-            )
-            self._clients[provider] = client
+            with self._client_lock:
+                client = self._clients.get(provider)
+                if client is None:
+                    client = OpenAI(
+                        api_key=provider_config["api_key"],
+                        base_url=provider_config["base_url"],
+                    )
+                    self._clients[provider] = client
         return client
 
     def chat(
@@ -469,6 +480,7 @@ class LLMService:
         system_prompt_override: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[int] = None,
+        analytics: Optional[AnalyticsService] = None,
     ) -> Dict[str, Any]:
         """Generate a Tutor chat reply through the selected provider."""
         provider_configs = self._provider_configs()
@@ -536,6 +548,7 @@ class LLMService:
                 prompt_length=sum(len(message["content"]) for message in chat_messages),
                 response_length=len(content or ""),
                 duration_ms=duration_ms,
+                analytics=analytics,
             )
 
             return {
@@ -560,6 +573,7 @@ class LLMService:
         step: int = 1,
         user_id: Optional[str] = None,
         session_id: Optional[int] = None,
+        analytics: Optional[AnalyticsService] = None,
     ) -> Dict[str, Any]:
         """生成提示（hint）"""
         if not self.client:
@@ -598,6 +612,7 @@ class LLMService:
                 prompt_length=len(prompt),
                 response_length=len(hint),
                 duration_ms=duration_ms,
+                analytics=analytics,
             )
             
             return {
@@ -615,6 +630,7 @@ class LLMService:
         solution_steps: Optional[List[Dict]] = None,
         user_id: Optional[str] = None,
         session_id: Optional[int] = None,
+        analytics: Optional[AnalyticsService] = None,
     ) -> Dict[str, Any]:
         """讲解标准解"""
         if not self.client:
@@ -658,6 +674,7 @@ class LLMService:
                 prompt_length=len(prompt),
                 response_length=len(explanation),
                 duration_ms=duration_ms,
+                analytics=analytics,
             )
             
             return {
@@ -675,6 +692,7 @@ class LLMService:
         standard_solution: str,
         user_id: Optional[str] = None,
         session_id: Optional[int] = None,
+        analytics: Optional[AnalyticsService] = None,
     ) -> Dict[str, Any]:
         """诊断错误"""
         if not self.client:
@@ -720,6 +738,7 @@ class LLMService:
                 prompt_length=len(prompt),
                 response_length=len(diagnosis),
                 duration_ms=duration_ms,
+                analytics=analytics,
             )
             
             return {
@@ -736,6 +755,7 @@ class LLMService:
         session_stats: Dict[str, Any],
         user_id: Optional[str] = None,
         session_id: Optional[int] = None,
+        analytics: Optional[AnalyticsService] = None,
     ) -> Dict[str, Any]:
         """生成 Session 总结"""
         if not self.client:
@@ -776,6 +796,7 @@ class LLMService:
                 prompt_length=len(prompt),
                 response_length=len(summary),
                 duration_ms=duration_ms,
+                analytics=analytics,
             )
             
             return {

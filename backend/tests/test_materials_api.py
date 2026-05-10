@@ -25,7 +25,7 @@ class MaterialsApiTests(unittest.TestCase):
         Base.metadata.create_all(bind=engine)
         self.SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         self.db = self.SessionLocal()
-        self.tmpdir = tempfile.TemporaryDirectory(dir=Path("storage"))
+        self.tmpdir = tempfile.TemporaryDirectory()
 
         self.previous_upload_dir = settings.RAG_UPLOAD_DIR
         self.previous_openai_key = settings.OPENAI_API_KEY

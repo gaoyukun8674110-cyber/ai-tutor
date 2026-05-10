@@ -1,5 +1,5 @@
 """LLM 相关 API"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -51,6 +51,14 @@ class DiagnoseRequest(BaseModel):
 
 class SummaryRequest(BaseModel):
     session_stats: dict
+
+
+def get_llm_service(request: Request) -> LLMService:
+    llm_service = getattr(request.app.state, "llm_service", None)
+    if llm_service is None:
+        llm_service = LLMService()
+        request.app.state.llm_service = llm_service
+    return llm_service
 
 
 def _last_user_message(messages: List[ChatMessage]) -> Optional[str]:
@@ -164,6 +172,7 @@ def _finalize_conversation_response(
     last_user_message: Optional[str],
     user_id: str,
     session_id: Optional[int],
+    analytics: Optional[AnalyticsService] = None,
 ) -> Dict[str, Any]:
     assistant_message = result.get("message", {}).get("content")
     if not last_user_message or not assistant_message:
@@ -197,6 +206,7 @@ def _finalize_conversation_response(
                 fallback_summary=fallback_summary,
                 user_id=user_id,
                 session_id=session_id,
+                analytics=analytics,
             )
             history.save_summary(
                 conversation_id=conversation["id"],
@@ -225,6 +235,7 @@ def _generate_conversation_summary(
     fallback_summary: str,
     user_id: Optional[str],
     session_id: Optional[int],
+    analytics: Optional[AnalyticsService] = None,
 ) -> str:
     learning_phase = str(request.tutor_context.get("learning_phase") or "general")
     transcript = "\n".join(
@@ -250,6 +261,7 @@ def _generate_conversation_summary(
         tutor_context={"task": "conversation_summary", "learning_phase": learning_phase},
         user_id=user_id,
         session_id=session_id,
+        analytics=analytics,
     )
     if "error" in result:
         return fallback_summary
@@ -257,16 +269,20 @@ def _generate_conversation_summary(
 
 
 @router.get("/providers", response_model=dict)
-def provider_metadata(current_user: str = Depends(get_current_user)):
+def provider_metadata(
+    llm: LLMService = Depends(get_llm_service),
+    current_user: str = Depends(get_current_user),
+):
     """获取可用模型 Provider 元数据，不返回任何 API Key"""
-    llm = LLMService()
     return llm.get_provider_metadata()
 
 
 @router.get("/prompt-profiles", response_model=dict)
-def prompt_profiles(current_user: str = Depends(get_current_user)):
+def prompt_profiles(
+    llm: LLMService = Depends(get_llm_service),
+    current_user: str = Depends(get_current_user),
+):
     """获取可用 Tutor 系统提示词配置"""
-    llm = LLMService()
     return llm.get_prompt_profiles()
 
 
@@ -351,13 +367,13 @@ def tutor_chat(
     user_id: Optional[str] = None,
     session_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    llm: LLMService = Depends(get_llm_service),
     current_user: str = Depends(get_current_user),
 ):
     """统一 Tutor 对话入口，支持多 Provider 后端代理"""
     user_id = current_user
     analytics = AnalyticsService(db)
     history = ChatHistoryService(db)
-    llm = LLMService(analytics)
 
     conversation_before = None
     if request.conversation_id is not None:
@@ -387,6 +403,7 @@ def tutor_chat(
         tutor_context=tutor_context,
         user_id=user_id,
         session_id=session_id,
+        analytics=analytics,
     )
 
     if "error" in result:
@@ -402,6 +419,7 @@ def tutor_chat(
         last_user_message=last_user_message,
         user_id=user_id,
         session_id=session_id,
+        analytics=analytics,
     )
 
     result["context_policy"] = context_policy
@@ -418,12 +436,12 @@ def generate_hint(
     user_id: Optional[str] = None,
     session_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    llm: LLMService = Depends(get_llm_service),
     current_user: str = Depends(get_current_user),
 ):
     """生成提示"""
     user_id = current_user
     analytics = AnalyticsService(db)
-    llm = LLMService(analytics)
     
     result = llm.generate_hint(
         question_content=request.question_content,
@@ -431,6 +449,7 @@ def generate_hint(
         step=request.step,
         user_id=user_id,
         session_id=session_id,
+        analytics=analytics,
     )
     
     if "error" in result:
@@ -445,12 +464,12 @@ def explain_solution(
     user_id: Optional[str] = None,
     session_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    llm: LLMService = Depends(get_llm_service),
     current_user: str = Depends(get_current_user),
 ):
     """讲解标准解"""
     user_id = current_user
     analytics = AnalyticsService(db)
-    llm = LLMService(analytics)
     
     result = llm.explain_solution(
         question_content=request.question_content,
@@ -458,6 +477,7 @@ def explain_solution(
         solution_steps=request.solution_steps,
         user_id=user_id,
         session_id=session_id,
+        analytics=analytics,
     )
     
     if "error" in result:
@@ -472,12 +492,12 @@ def diagnose_error(
     user_id: Optional[str] = None,
     session_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    llm: LLMService = Depends(get_llm_service),
     current_user: str = Depends(get_current_user),
 ):
     """诊断错误"""
     user_id = current_user
     analytics = AnalyticsService(db)
-    llm = LLMService(analytics)
     
     result = llm.diagnose_error(
         question_content=request.question_content,
@@ -486,6 +506,7 @@ def diagnose_error(
         standard_solution=request.standard_solution,
         user_id=user_id,
         session_id=session_id,
+        analytics=analytics,
     )
     
     if "error" in result:
@@ -500,17 +521,18 @@ def session_summary(
     user_id: Optional[str] = None,
     session_id: Optional[int] = None,
     db: Session = Depends(get_db),
+    llm: LLMService = Depends(get_llm_service),
     current_user: str = Depends(get_current_user),
 ):
     """生成 Session 总结"""
     user_id = current_user
     analytics = AnalyticsService(db)
-    llm = LLMService(analytics)
     
     result = llm.session_summary(
         session_stats=request.session_stats,
         user_id=user_id,
         session_id=session_id,
+        analytics=analytics,
     )
     
     if "error" in result:

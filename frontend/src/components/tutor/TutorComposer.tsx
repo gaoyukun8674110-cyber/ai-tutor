@@ -51,7 +51,12 @@ export function TutorComposer({
         value={input}
         onChange={(event) => onInputChange(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
+          if (
+            event.key === 'Enter' &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing &&
+            event.keyCode !== 229
+          ) {
             event.preventDefault();
             onSend(input);
           }

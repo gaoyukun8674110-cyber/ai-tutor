@@ -14,10 +14,13 @@ const apiClientSource = readFileSync('src/utils/apiClient.ts', 'utf8');
 assert.match(apiClientSource, /X-API-Key/);
 assert.match(apiClientSource, /signal\?: AbortSignal/);
 
-const appSource = readFileSync('src/App.tsx', 'utf8');
-assert.match(appSource, /useQuery/);
-assert.match(appSource, /invalidateQueries/);
-assert.match(appSource, /Button/);
+const mainSource = readFileSync('src/main.tsx', 'utf8');
+assert.match(mainSource, /QueryClientProvider/);
+
+const dashboardPageSource = readFileSync('src/pages/DashboardPage.tsx', 'utf8');
+assert.match(dashboardPageSource, /useQuery/);
+assert.match(dashboardPageSource, /invalidateQueries/);
+assert.match(dashboardPageSource, /Button/);
 
 const settingsSource = readFileSync('src/utils/settings.tsx', 'utf8');
 assert.match(settingsSource, /ai-tutor-language/);
@@ -27,7 +30,9 @@ assert.match(settingsSource, /t: <T extends string>/);
 const tutorSource = readFileSync('src/components/TutorChatWorkspace.tsx', 'utf8');
 assert.match(tutorSource, /errorBanner/);
 assert.doesNotMatch(tutorSource, /label: t\([^)]*Configuration/);
-assert.match(tutorSource, /AbortController/);
+
+const tutorChatHookSource = readFileSync('src/features/tutor/useTutorChat.ts', 'utf8');
+assert.match(tutorChatHookSource, /AbortController/);
 
 const sidebarSource = readFileSync('src/components/tutor/TutorSidebar.tsx', 'utf8');
 assert.match(sidebarSource, /SelectTrigger/);
@@ -42,14 +47,18 @@ assert.doesNotMatch(calendarSource, /borderColor:.*tokens\.borderSoft/);
 const uiFiles = readdirSync('src/components/ui').filter((name) => name.endsWith('.tsx') || name.endsWith('.ts')).sort();
 assert.deepEqual(uiFiles, ['button.tsx', 'select.tsx', 'utils.ts']);
 
-const backendMaterials = readFileSync('../AI Tutor/app/api/materials.py', 'utf8');
+const backendMaterials = readFileSync('../backend/app/api/materials.py', 'utf8');
 assert.match(backendMaterials, /BackgroundTasks/);
 assert.match(backendMaterials, /read_validated_upload/);
 
-const backendMain = readFileSync('../AI Tutor/app/main.py', 'utf8');
+const backendMain = readFileSync('../backend/app/main.py', 'utf8');
 assert.match(backendMain, /X-Frame-Options/);
 assert.match(backendMain, /Content-Security-Policy/);
 
-const backendService = readFileSync('../AI Tutor/app/services/materials.py', 'utf8');
+const backendService = readFileSync('../backend/app/services/materials.py', 'utf8');
 assert.match(backendService, /embedding_mode/);
-assert.match(backendService, /RAG_SEARCH_CANDIDATE_LIMIT/);
+assert.match(backendService, /PersistentVectorIndex/);
+assert.match(backendService, /search_snapshot/);
+
+const backendConfig = readFileSync('../backend/app/config.py', 'utf8');
+assert.match(backendConfig, /RAG_SEARCH_CANDIDATE_LIMIT/);

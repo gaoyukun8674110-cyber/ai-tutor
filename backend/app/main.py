@@ -1,14 +1,15 @@
 """主应用入口"""
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from app.bootstrap import initialize_database, should_auto_create_schema
 from app.config import settings
 from app.database import engine, Base
 from app.api import questions, training, student, llm, analytics, dashboard, materials
+from app.services.llm_service import LLMService
 from app.utils.errors import http_exception_handler, unhandled_exception_handler
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # 创建数据库表
-Base.metadata.create_all(bind=engine)
 
 # 创建 FastAPI 应用
 app = FastAPI(
@@ -17,16 +18,38 @@ app = FastAPI(
     version="1.0.0",
 )
 
+
+def build_cors_options(debug: bool, origins: list[str]) -> tuple[list[str], bool]:
+    if debug:
+        return ["*"], False
+    return origins, True
+
+
 # CORS 配置
+cors_allow_origins, cors_allow_credentials = build_cors_options(settings.DEBUG, settings.CORS_ORIGINS)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # 生产环境应该限制具体域名
-    allow_credentials=True,
+    allow_origins=cors_allow_origins,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.add_exception_handler(Exception, unhandled_exception_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+
+
+@app.on_event("startup")
+def initialize_app_database():
+    initialize_database(
+        base=Base,
+        engine=engine,
+        should_create=should_auto_create_schema(
+            debug=settings.DEBUG,
+            db_auto_create=settings.DB_AUTO_CREATE,
+        ),
+    )
+    app.state.llm_service = LLMService()
 
 
 @app.middleware("http")
@@ -72,4 +95,4 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8001)

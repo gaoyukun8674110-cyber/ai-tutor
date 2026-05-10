@@ -1,13 +1,19 @@
 """应用配置管理"""
-from pydantic_settings import BaseSettings
+from pathlib import Path
 from typing import Optional
+
+from pydantic_settings import BaseSettings
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+DEFAULT_DATABASE_URL = f"sqlite:///{(BACKEND_DIR / 'tutor.db').as_posix()}"
 
 
 class Settings(BaseSettings):
     """应用配置"""
     
     # 数据库
-    DATABASE_URL: str = "sqlite:///./tutor.db"
+    DATABASE_URL: str = DEFAULT_DATABASE_URL
     
     # OpenAI
     OPENAI_API_KEY: Optional[str] = None
@@ -41,10 +47,13 @@ class Settings(BaseSettings):
     
     # 应用
     DEBUG: bool = True
+    DB_AUTO_CREATE: Optional[bool] = None
     LOG_LEVEL: str = "INFO"
     CORS_ORIGINS: list[str] = [
         "http://localhost:4173",
         "http://localhost:5173",
+        "http://127.0.0.1:4173",
+        "http://127.0.0.1:5173",
     ]
     API_KEYS: list[str] = ["local-dev-key"]
     DEFAULT_AUTH_USER_ID: str = "local"

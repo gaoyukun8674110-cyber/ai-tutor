@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -39,11 +39,18 @@ try {
   });
 
   const { html } = require(bundlePath);
+  const source = readFileSync('src/components/MathMessage.tsx', 'utf8');
 
   assert.match(html, /class="[^"]*math-message/);
   assert.match(html, /class="[^"]*katex/);
   assert.match(html, /class="[^"]*katex-display/);
   assert.match(html, /<math/);
+  assert.doesNotMatch(html, /<script/i);
+  assert.doesNotMatch(html, /onerror/i);
+  assert.match(source, /defaultSchema/);
+  assert.match(source, /katexSanitizeSchema/);
+  assert.match(source, /math-inline/);
+  assert.match(source, /math-display/);
 } finally {
   rmSync(tempDir, { recursive: true, force: true });
 }

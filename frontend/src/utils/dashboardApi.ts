@@ -58,9 +58,10 @@ export async function createDashboardTask(
     scheduled_date?: string;
   },
 ): Promise<DashboardTask> {
+  const user_id = task.user_id ?? 'local';
   return apiFetch<DashboardTask>('/api/dashboard/tasks', {
     method: 'POST',
-    body: JSON.stringify({ user_id: 'local', ...task }),
+    body: JSON.stringify({ ...task, user_id }),
   });
 }
 
@@ -70,9 +71,10 @@ export async function updateDashboardTask(
     user_id?: string;
   },
 ): Promise<DashboardTask> {
+  const user_id = update.user_id ?? 'local';
   return apiFetch<DashboardTask>(`/api/dashboard/tasks/${taskId}`, {
     method: 'PATCH',
-    body: JSON.stringify({ user_id: 'local', ...update }),
+    body: JSON.stringify({ ...update, user_id }),
   });
 }
 

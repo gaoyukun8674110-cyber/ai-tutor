@@ -34,13 +34,13 @@ try {
     focusLogMinutes: 0,
   });
 
-  const timerHookSource = readFileSync('src/components/tutor/useTutorTimer.ts', 'utf8');
-  assert.match(timerHookSource, /logDashboardPomodoro/);
-  assert.match(timerHookSource, /focusLogMinutes/);
+  const pomodoroProviderSource = readFileSync('src/features/pomodoro/PomodoroProvider.tsx', 'utf8');
+  assert.match(pomodoroProviderSource, /logDashboardPomodoro/);
+  assert.match(pomodoroProviderSource, /focusLogMinutes/);
 
-  const appSource = readFileSync('src/App.tsx', 'utf8');
-  assert.match(appSource, /persistedCompletedPomodoros/);
-  assert.match(appSource, /persistedFocusMinutes/);
+  const dashboardPageSource = readFileSync('src/pages/DashboardPage.tsx', 'utf8');
+  assert.match(dashboardPageSource, /persistedCompletedPomodoros/);
+  assert.match(dashboardPageSource, /persistedFocusMinutes/);
 } finally {
   rmSync(tempDir, { recursive: true, force: true });
 }

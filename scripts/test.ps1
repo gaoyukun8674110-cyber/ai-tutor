@@ -19,6 +19,7 @@ finally {
 
 Push-Location $Frontend
 try {
+    npm.cmd run test:run
     npm.cmd run type-check
     npm.cmd run build
 }

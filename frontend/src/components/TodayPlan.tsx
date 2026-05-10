@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { CheckCircle2, Circle, Clock, Edit3, Plus, Save, Trash2, X } from 'lucide-react';
-import {
-  createDashboardTask,
-  deleteDashboardTask,
-  updateDashboardTask,
-  type DashboardTask,
-} from '../utils/dashboardApi';
-import { cardSurfaceStyle, inputSurfaceStyle, panelSurfaceStyle, statusPanelStyle } from '../utils/glassStyles';
+
+import { createDashboardTask, deleteDashboardTask, updateDashboardTask, type DashboardTask } from '../utils/dashboardApi';
+import { clampDurationMinutes } from '../utils/duration';
+import { cardSurfaceStyle, inputSurfaceStyle, panelSurfaceStyle } from '../utils/glassStyles';
 import { useSettings } from '../utils/settings';
+import { toastError } from '../utils/toast';
 
 type Priority = 'high' | 'medium' | 'low';
 
@@ -25,10 +24,10 @@ interface TodayPlanProps {
   userId?: string;
 }
 
-const priorityStyles: Record<Priority, { label: { zh: string; en: string } }> = {
-  high: { label: { zh: '高', en: 'High' } },
-  medium: { label: { zh: '中', en: 'Medium' } },
-  low: { label: { zh: '低', en: 'Low' } },
+const priorityStyles: Record<Priority, { label: string }> = {
+  high: { label: 'High' },
+  medium: { label: 'Medium' },
+  low: { label: 'Low' },
 };
 
 export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'local' }: TodayPlanProps) {
@@ -37,9 +36,7 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
   const [duration, setDuration] = useState(25);
   const [priority, setPriority] = useState<Priority>('medium');
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { language, tokens, t } = useSettings();
+  const { tokens, t } = useSettings();
 
   const stats = useMemo(() => {
     const completed = tasks.filter((task) => task.completed);
@@ -65,73 +62,102 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
     setEditingId(null);
   };
 
-  const saveTask = async () => {
-    const cleanTask = taskText.trim();
-    const cleanSubject = subject.trim() || t('学习', 'Study');
-    if (!cleanTask) return;
-
-    setIsSaving(true);
-    setError(null);
-    try {
-      if (editingId) {
-        await updateDashboardTask(editingId, {
+  const saveTaskMutation = useMutation({
+    mutationFn: async (task: {
+      id?: number;
+      subject: string;
+      task: string;
+      duration: number;
+      priority: Priority;
+    }) => {
+      if (task.id) {
+        return updateDashboardTask(task.id, {
           user_id: userId,
-          subject: cleanSubject,
-          task: cleanTask,
-          duration,
-          priority,
-        });
-      } else {
-        await createDashboardTask({
-          user_id: userId,
-          subject: cleanSubject,
-          task: cleanTask,
-          duration,
-          priority,
+          subject: task.subject,
+          task: task.task,
+          duration: task.duration,
+          priority: task.priority,
         });
       }
+
+      return createDashboardTask({
+        user_id: userId,
+        subject: task.subject,
+        task: task.task,
+        duration: task.duration,
+        priority: task.priority,
+      });
+    },
+    onSuccess: () => {
       resetForm();
       onDataChange?.();
-    } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : 'Unable to save task');
-    } finally {
-      setIsSaving(false);
-    }
+    },
+    onError: (error) => {
+      toastError(error, t('Unable to save task', 'Unable to save task'));
+    },
+  });
+
+  const toggleTaskMutation = useMutation({
+    mutationFn: async (task: DashboardTask) =>
+      updateDashboardTask(task.id, {
+        user_id: userId,
+        completed: !task.completed,
+      }),
+    onSuccess: () => {
+      onDataChange?.();
+    },
+    onError: (error) => {
+      toastError(error, t('Unable to update task', 'Unable to update task'));
+    },
+  });
+
+  const deleteTaskMutation = useMutation({
+    mutationFn: async (task: DashboardTask) => deleteDashboardTask(task.id, userId),
+    onSuccess: (_deleted, task) => {
+      if (editingId === task.id) resetForm();
+      onDataChange?.();
+    },
+    onError: (error) => {
+      toastError(error, t('Unable to delete task', 'Unable to delete task'));
+    },
+  });
+
+  const isBusy = saveTaskMutation.isPending || toggleTaskMutation.isPending || deleteTaskMutation.isPending;
+
+  const saveTask = () => {
+    const cleanTask = taskText.trim();
+    const cleanSubject = subject.trim() || 'Study';
+    if (!cleanTask) return;
+
+    saveTaskMutation.mutate({
+      id: editingId ?? undefined,
+      subject: cleanSubject,
+      task: cleanTask,
+      duration,
+      priority,
+    });
   };
 
   const editTask = (task: DashboardTask) => {
     setEditingId(task.id);
     setSubject(task.subject);
     setTaskText(task.task);
-    setDuration(task.duration);
+    setDuration(clampDurationMinutes(task.duration));
     setPriority(task.priority);
   };
 
-  const toggleTask = async (task: DashboardTask) => {
-    setError(null);
-    try {
-      await updateDashboardTask(task.id, { user_id: userId, completed: !task.completed });
-      onDataChange?.();
-    } catch (toggleError) {
-      setError(toggleError instanceof Error ? toggleError.message : 'Unable to update task');
-    }
+  const toggleTask = (task: DashboardTask) => {
+    toggleTaskMutation.mutate(task);
   };
 
-  const deleteTask = async (id: number) => {
-    setError(null);
-    try {
-      await deleteDashboardTask(id, userId);
-      if (editingId === id) resetForm();
-      onDataChange?.();
-    } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : 'Unable to delete task');
-    }
+  const deleteTask = (id: number) => {
+    const task = tasks.find((item) => item.id === id);
+    if (!task) return;
+    deleteTaskMutation.mutate(task);
   };
 
   const cardStyle = cardSurfaceStyle(tokens);
-
   const panelStyle = panelSurfaceStyle(tokens);
-
   const fieldStyle = inputSurfaceStyle(tokens);
 
   const priorityColors: Record<Priority, string> = {
@@ -141,15 +167,15 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
   };
 
   return (
-    <div className="rounded-2xl overflow-hidden shadow-sm transition-all duration-300 h-full" style={cardStyle}>
-      <div className="p-6 border-b" style={panelStyle}>
+    <div className="h-full overflow-hidden rounded-2xl shadow-sm transition-all duration-300" style={cardStyle}>
+      <div className="border-b p-6" style={panelStyle}>
         <div className="flex items-center justify-between gap-4">
           <div>
             <h2 className="text-lg font-medium" style={{ color: tokens.accentSecondary }}>
               {t('今日学习计划', "Today's plan")}
             </h2>
-            <p className="text-sm mt-1" style={{ color: tokens.textSecondary }}>
-              {t('按今天的安排添加任务。', 'Add tasks for today.')}
+            <p className="mt-1 text-sm" style={{ color: tokens.textSecondary }}>
+              {t('为今天添加任务。', 'Add tasks for today.')}
             </p>
           </div>
           <div className="text-sm font-medium tabular-nums" style={{ color: tokens.textPrimary }}>
@@ -157,16 +183,13 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
           </div>
         </div>
 
-        <div className="mt-4 w-full rounded-full h-3" style={{ background: tokens.surfaceAccent, border: tokens.borderSoft as string }}>
-          <div
-            className="h-3 rounded-full transition-all duration-300"
-            style={{ width: `${progressPercentage}%`, background: tokens.progressGradient }}
-          />
+        <div className="mt-4 h-3 w-full rounded-full" style={{ background: tokens.surfaceAccent, border: tokens.borderSoft as string }}>
+          <div className="h-3 rounded-full transition-all duration-300" style={{ width: `${progressPercentage}%`, background: tokens.progressGradient }} />
         </div>
       </div>
 
-      <div className="p-6 space-y-5">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-2xl p-4" style={panelStyle}>
+      <div className="space-y-5 p-6">
+        <div className="grid grid-cols-1 gap-3 rounded-2xl p-4 sm:grid-cols-2" style={panelStyle}>
           <input
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
@@ -179,7 +202,7 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
             min={1}
             max={600}
             value={duration}
-            onChange={(event) => setDuration(Math.max(1, Number(event.target.value) || 1))}
+            onChange={(event) => setDuration(clampDurationMinutes(Number(event.target.value)))}
             className="rounded-xl px-3 py-2 text-sm outline-none placeholder:text-[var(--ai-placeholder-text)]"
             style={fieldStyle}
           />
@@ -196,67 +219,63 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
             className="rounded-xl px-3 py-2 text-sm outline-none"
             style={fieldStyle}
           >
-            <option value="high">{priorityStyles.high.label[language]}</option>
-            <option value="medium">{priorityStyles.medium.label[language]}</option>
-            <option value="low">{priorityStyles.low.label[language]}</option>
+            <option value="high">{priorityStyles.high.label}</option>
+            <option value="medium">{priorityStyles.medium.label}</option>
+            <option value="low">{priorityStyles.low.label}</option>
           </select>
           <div className="flex gap-2">
             <button
               onClick={saveTask}
-              disabled={!taskText.trim() || isSaving}
-              className="h-10 flex-1 px-4 rounded-xl text-white disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              disabled={!taskText.trim() || saveTaskMutation.isPending}
+              className="flex h-10 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-white disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: tokens.accentSecondary }}
             >
               {editingId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
               {editingId ? t('保存', 'Save') : t('添加', 'Add')}
             </button>
             {editingId && (
-              <button onClick={resetForm} className="h-10 w-10 rounded-xl flex items-center justify-center" style={panelStyle}>
+              <button onClick={resetForm} className="flex h-10 w-10 items-center justify-center rounded-xl" style={panelStyle}>
                 <X className="h-4 w-4" />
               </button>
             )}
           </div>
         </div>
 
-        {error && (
-          <div className="rounded-2xl p-3 text-sm" style={statusPanelStyle(tokens, 'warning')}>
-            {error}
-          </div>
-        )}
-
         {tasks.length === 0 ? (
           <div className="rounded-2xl p-8 text-center" style={panelStyle}>
             <p className="text-sm" style={{ color: tokens.textSecondary }}>
-              {t('今天还没有任务', 'No tasks yet')}
+              {t('今天还没有任务。', 'No tasks yet')}
             </p>
           </div>
         ) : (
           <div className="space-y-3">
             {tasks.map((task) => (
-              <div key={task.id} className="group p-4 rounded-2xl border transition-all duration-200" style={panelStyle}>
+              <div key={task.id} className="group rounded-2xl border p-4 transition-all duration-200" style={panelStyle}>
                 <div className="flex items-start gap-4">
-                  <button onClick={() => toggleTask(task)} className="mt-1" aria-label={t('切换完成状态', 'Toggle task')}>
+                  <button
+                    onClick={() => toggleTask(task)}
+                    className="mt-1"
+                    aria-label={t('切换任务完成状态', 'Toggle task')}
+                    disabled={toggleTaskMutation.isPending}
+                  >
                     {task.completed ? (
                       <CheckCircle2 className="h-6 w-6 text-green-600" />
                     ) : (
-                      <Circle className="h-6 w-6 text-gray-400 group-hover:text-orange-500 transition-colors" />
+                      <Circle className="h-6 w-6 text-gray-400 transition-colors group-hover:text-orange-500" />
                     )}
                   </button>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className={task.completed ? 'line-through text-green-600' : ''} style={{ color: task.completed ? undefined : tokens.textPrimary }}>
                         {task.subject}
                       </span>
-                      <span
-                        className="px-2 py-1 rounded-lg text-xs font-medium"
-                        style={{ background: tokens.surface, border: tokens.borderSoft, color: priorityColors[task.priority] }}
-                      >
-                        {priorityStyles[task.priority].label[language]}
+                      <span className="rounded-lg px-2 py-1 text-xs font-medium" style={{ background: tokens.surface, border: tokens.borderSoft, color: priorityColors[task.priority] }}>
+                        {priorityStyles[task.priority].label}
                       </span>
                     </div>
                     <p
-                      className="text-sm mt-2"
+                      className="mt-2 text-sm"
                       style={{
                         color: task.completed ? tokens.success : tokens.textSecondary,
                         textDecoration: task.completed ? 'line-through' : 'none',
@@ -264,18 +283,28 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
                     >
                       {task.task}
                     </p>
-                    <div className="flex items-center gap-1 text-xs mt-2" style={{ color: tokens.textSecondary }}>
+                    <div className="mt-2 flex items-center gap-1 text-xs" style={{ color: tokens.textSecondary }}>
                       <Clock className="h-3 w-3 text-blue-500" />
                       {task.duration}
                       {t('分钟', ' min')}
                     </div>
                   </div>
 
-                  <div className="flex gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => editTask(task)} className="h-9 w-9 rounded-xl flex items-center justify-center" style={panelStyle}>
+                  <div className="flex gap-2 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+                    <button
+                      onClick={() => editTask(task)}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl"
+                      style={panelStyle}
+                      disabled={isBusy}
+                    >
                       <Edit3 className="h-4 w-4" />
                     </button>
-                    <button onClick={() => deleteTask(task.id)} className="h-9 w-9 rounded-xl flex items-center justify-center" style={panelStyle}>
+                    <button
+                      onClick={() => deleteTask(task.id)}
+                      className="flex h-9 w-9 items-center justify-center rounded-xl"
+                      style={panelStyle}
+                      disabled={deleteTaskMutation.isPending}
+                    >
                       <Trash2 className="h-4 w-4 text-red-500" />
                     </button>
                   </div>
@@ -288,14 +317,14 @@ export function TodayPlan({ onStatsChange, onDataChange, tasks = [], userId = 'l
         <div className="grid grid-cols-2 gap-4 text-sm">
           <div className="rounded-2xl p-4" style={panelStyle}>
             <div className="text-green-600">{t('已完成', 'Done')}</div>
-            <div className="text-2xl font-semibold mt-1 tabular-nums" style={{ color: tokens.textPrimary }}>
+            <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: tokens.textPrimary }}>
               {stats.completedMinutes}
               {t('分钟', ' min')}
             </div>
           </div>
           <div className="rounded-2xl p-4" style={panelStyle}>
             <div className="text-blue-600">{t('计划总计', 'Planned')}</div>
-            <div className="text-2xl font-semibold mt-1 tabular-nums" style={{ color: tokens.textPrimary }}>
+            <div className="mt-1 text-2xl font-semibold tabular-nums" style={{ color: tokens.textPrimary }}>
               {stats.totalMinutes}
               {t('分钟', ' min')}
             </div>

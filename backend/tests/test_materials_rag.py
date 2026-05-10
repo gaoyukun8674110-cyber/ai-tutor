@@ -149,6 +149,128 @@ class MaterialRagTests(unittest.TestCase):
         finally:
             db.close()
 
+    def test_material_search_uses_vector_index_instead_of_recent_chunk_window(self):
+        db = self.SessionLocal()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                service = MaterialService(
+                    db,
+                    embedding_provider=HashEmbeddingProvider(dimensions=48),
+                    upload_dir=Path(tmpdir),
+                    chunk_size=200,
+                    chunk_overlap=20,
+                )
+                older_material = service.create_material_from_bytes(
+                    filename="older-probability.txt",
+                    content=b"Posterior probability updates a prior after observing evidence in Bayes theorem.",
+                    content_type="text/plain",
+                    user_id="learner-1",
+                )
+                service.create_material_from_bytes(
+                    filename="recent-geometry.txt",
+                    content=b"Triangles, circles, and trapezoids are geometry topics.",
+                    content_type="text/plain",
+                    user_id="learner-1",
+                )
+                service.create_material_from_bytes(
+                    filename="recent-history.txt",
+                    content=b"Ancient dynasties and empires shaped world history.",
+                    content_type="text/plain",
+                    user_id="learner-1",
+                )
+                service.create_material_from_bytes(
+                    filename="recent-biology.txt",
+                    content=b"Cell membranes and mitochondria are biology concepts.",
+                    content_type="text/plain",
+                    user_id="learner-1",
+                )
+
+                results = service.search_materials(
+                    query="How does posterior probability update a prior?",
+                    user_id="learner-1",
+                    top_k=2,
+                )
+
+            self.assertGreaterEqual(len(results), 1)
+            self.assertEqual(results[0]["material_id"], older_material["id"])
+            self.assertIn("Posterior probability", results[0]["content"])
+        finally:
+            db.close()
+
+    def test_material_search_honors_material_id_filters_with_vector_index(self):
+        db = self.SessionLocal()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                service = MaterialService(
+                    db,
+                    embedding_provider=HashEmbeddingProvider(dimensions=48),
+                    upload_dir=Path(tmpdir),
+                    chunk_size=200,
+                    chunk_overlap=20,
+                )
+                bayes_material = service.create_material_from_bytes(
+                    filename="bayes.txt",
+                    content=b"Posterior probability is central to Bayes theorem.",
+                    content_type="text/plain",
+                    user_id="learner-1",
+                )
+                algebra_material = service.create_material_from_bytes(
+                    filename="algebra.txt",
+                    content=b"Linear equations and variables belong to algebra.",
+                    content_type="text/plain",
+                    user_id="learner-1",
+                )
+
+                filtered_results = service.search_materials(
+                    query="posterior probability",
+                    user_id="learner-1",
+                    material_ids=[algebra_material["id"]],
+                    top_k=2,
+                )
+                included_results = service.search_materials(
+                    query="posterior probability",
+                    user_id="learner-1",
+                    material_ids=[bayes_material["id"]],
+                    top_k=2,
+                )
+
+            self.assertTrue(all(result["material_id"] == algebra_material["id"] for result in filtered_results))
+            self.assertEqual(len(included_results), 1)
+            self.assertEqual(included_results[0]["material_id"], bayes_material["id"])
+        finally:
+            db.close()
+
+    def test_default_local_user_can_read_legacy_userless_materials(self):
+        db = self.SessionLocal()
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                service = MaterialService(
+                    db,
+                    embedding_provider=HashEmbeddingProvider(dimensions=48),
+                    upload_dir=Path(tmpdir),
+                    chunk_size=200,
+                    chunk_overlap=20,
+                )
+                material = service.create_material_from_bytes(
+                    filename="legacy-statistics.txt",
+                    content=b"Bayes theorem uses posterior probability and prior probability.",
+                    content_type="text/plain",
+                    user_id=None,
+                )
+
+                listed = service.list_materials(user_id="local")
+                results = service.search_materials(
+                    query="posterior probability",
+                    user_id="local",
+                    top_k=2,
+                )
+
+            self.assertEqual([item["id"] for item in listed], [material["id"]])
+            self.assertEqual(len(results), 1)
+            self.assertEqual(results[0]["material_id"], material["id"])
+        finally:
+            db.close()
+
 
 if __name__ == "__main__":
     unittest.main()
