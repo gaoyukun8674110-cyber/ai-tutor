@@ -1,6 +1,5 @@
 import tempfile
 import unittest
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -9,9 +8,9 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.deps import get_current_user
+from app.api.materials import router as materials_router
 from app.config import settings
 from app.database import Base, get_db
-from app.api.materials import router as materials_router
 from app.models.user import User
 
 

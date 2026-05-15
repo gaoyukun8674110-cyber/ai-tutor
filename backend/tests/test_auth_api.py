@@ -5,12 +5,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.auth import router as auth_router
 from app.config import settings
 from app.database import Base, get_db
 from app.utils.errors import http_exception_handler
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
 class AuthApiTests(unittest.TestCase):

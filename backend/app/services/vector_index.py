@@ -1,11 +1,12 @@
 """Persistent vector index utilities for study-material retrieval."""
+
 from __future__ import annotations
 
 import json
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 
 @dataclass(frozen=True)
@@ -19,7 +20,7 @@ class VectorIndexItem:
 def euclidean_distance(left: list[float], right: list[float]) -> float:
     if not left or not right or len(left) != len(right):
         return float("inf")
-    return math.sqrt(sum((a - b) * (a - b) for a, b in zip(left, right)))
+    return math.sqrt(sum((a - b) * (a - b) for a, b in zip(left, right, strict=False)))
 
 
 def _build_tree(items: list[VectorIndexItem]) -> dict | None:
@@ -36,10 +37,7 @@ def _build_tree(items: list[VectorIndexItem]) -> dict | None:
         }
 
     remaining = items[:-1]
-    distances = [
-        (euclidean_distance(vantage_point.vector, item.vector), item)
-        for item in remaining
-    ]
+    distances = [(euclidean_distance(vantage_point.vector, item.vector), item) for item in remaining]
     distances.sort(key=lambda entry: entry[0])
     threshold = distances[len(distances) // 2][0]
     inner = [item for distance, item in distances if distance <= threshold]

@@ -1,14 +1,19 @@
 """LLM 相关 API"""
+
 import time
 from collections import deque
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict, Field
-from typing import Optional, List, Dict, Any
+from sqlalchemy.orm import Session
+
 from app.api.deps import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.services.analytics import AnalyticsService
+from app.services.chat_history import ChatHistoryService
 from app.services.llm_credential_resolver import LLMCredentialResolver, ResolvedProvider
 from app.services.llm_credential_service import (
     CredentialAADMismatch,
@@ -20,8 +25,6 @@ from app.services.llm_credential_service import (
 )
 from app.services.llm_provider_registry import global_provider_credentials, provider_registry
 from app.services.llm_service import LLMService
-from app.services.analytics import AnalyticsService
-from app.services.chat_history import ChatHistoryService
 from app.services.materials import MaterialService
 from app.utils.errors import api_error, safe_llm_error
 
@@ -35,25 +38,25 @@ class ChatMessage(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    conversation_id: Optional[int] = None
+    conversation_id: int | None = None
     provider: str = "auto"
-    model: Optional[str] = None
+    model: str | None = None
     prompt_profile: str = "three_stage"
-    system_prompt_override: Optional[str] = None
-    messages: List[ChatMessage]
-    tutor_context: Dict[str, Any] = Field(default_factory=dict)
+    system_prompt_override: str | None = None
+    messages: list[ChatMessage]
+    tutor_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class HintRequest(BaseModel):
     question_content: str
-    student_answer: Optional[str] = None
+    student_answer: str | None = None
     step: int = 1
 
 
 class ExplainRequest(BaseModel):
     question_content: str
     standard_solution: str
-    solution_steps: Optional[list] = None
+    solution_steps: list | None = None
 
 
 class DiagnoseRequest(BaseModel):
@@ -68,9 +71,9 @@ class SummaryRequest(BaseModel):
 
 
 class UserLLMCredentialPutIn(BaseModel):
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    default_model: Optional[str] = None
+    api_key: str | None = None
+    base_url: str | None = None
+    default_model: str | None = None
     is_default: bool = False
     is_enabled: bool = True
 
@@ -78,10 +81,10 @@ class UserLLMCredentialPutIn(BaseModel):
 class UserLLMCredentialPatchIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    base_url: Optional[str] = None
-    default_model: Optional[str] = None
-    is_default: Optional[bool] = None
-    is_enabled: Optional[bool] = None
+    base_url: str | None = None
+    default_model: str | None = None
+    is_default: bool | None = None
+    is_enabled: bool | None = None
 
 
 def get_llm_service(request: Request) -> LLMService:
@@ -133,10 +136,7 @@ def _enforce_test_rate_limit(user_id: int, provider_id: str) -> None:
 
 def _safe_provider_metadata_for_user(db: Session, user: User) -> dict[str, Any]:
     credential_service = LLMCredentialService(db)
-    credentials = {
-        credential.provider_id: credential
-        for credential in credential_service.get_user_credentials(user)
-    }
+    credentials = {credential.provider_id: credential for credential in credential_service.get_user_credentials(user)}
     providers = []
     for provider_id, definition in provider_registry().items():
         credential = credentials.get(provider_id)
@@ -144,9 +144,13 @@ def _safe_provider_metadata_for_user(db: Session, user: User) -> dict[str, Any]:
         has_global = bool(global_credentials["base_url"]) and (
             not definition.requires_api_key or bool(global_credentials["api_key"])
         )
-        has_user = bool(credential and credential.is_enabled and (credential.encrypted_api_key or not definition.requires_api_key))
+        has_user = bool(
+            credential and credential.is_enabled and (credential.encrypted_api_key or not definition.requires_api_key)
+        )
         source = "user" if has_user else ("local" if provider_id == "ollama" else ("global" if has_global else "none"))
-        enabled = definition.implemented and (has_user or has_global or (provider_id == "ollama" and bool(definition.base_url)))
+        enabled = definition.implemented and (
+            has_user or has_global or (provider_id == "ollama" and bool(definition.base_url))
+        )
         reason = None
         if not definition.implemented:
             reason = "provider adapter is not implemented yet"
@@ -159,7 +163,9 @@ def _safe_provider_metadata_for_user(db: Session, user: User) -> dict[str, Any]:
                 "adapter": definition.adapter,
                 "enabled": enabled,
                 "implemented": definition.implemented,
-                "default_model": credential.default_model if credential and credential.default_model else definition.default_model,
+                "default_model": (
+                    credential.default_model if credential and credential.default_model else definition.default_model
+                ),
                 "models": definition.models,
                 "reason": reason,
                 "source": source,
@@ -170,20 +176,20 @@ def _safe_provider_metadata_for_user(db: Session, user: User) -> dict[str, Any]:
     return {"providers": providers}
 
 
-def _last_user_message(messages: List[ChatMessage]) -> Optional[str]:
+def _last_user_message(messages: list[ChatMessage]) -> str | None:
     for message in reversed(messages):
         if message.role == "user" and message.content.strip():
             return message.content.strip()
     return None
 
 
-def _normalize_material_ids(raw_material_ids: Any) -> Optional[List[int]]:
+def _normalize_material_ids(raw_material_ids: Any) -> list[int] | None:
     if raw_material_ids is None:
         return None
     if not isinstance(raw_material_ids, list):
         return []
 
-    material_ids: List[int] = []
+    material_ids: list[int] = []
     for raw_id in raw_material_ids:
         try:
             material_id = int(raw_id)
@@ -195,12 +201,12 @@ def _normalize_material_ids(raw_material_ids: Any) -> Optional[List[int]]:
 
 
 def _inject_material_context(
-    tutor_context: Dict[str, Any],
-    last_user_message: Optional[str],
+    tutor_context: dict[str, Any],
+    last_user_message: str | None,
     material_service: MaterialService,
-    user_id: Optional[str],
+    user_id: str | None,
     top_k: int,
-) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     next_context = dict(tutor_context)
     cleaned_message = (last_user_message or "").strip()
     if not cleaned_message:
@@ -230,15 +236,19 @@ def _prepare_tutor_context(
     llm: LLMService,
     material_service: MaterialService,
     user_id: str,
-) -> tuple[Dict[str, Any], List[Dict[str, Any]], Optional[str], str]:
+) -> tuple[dict[str, Any], list[dict[str, Any]], str | None, str]:
     last_user_message = _last_user_message(request.messages)
     tutor_context = dict(request.tutor_context)
     detected_learning_phase = llm.detect_learning_phase(last_user_message)
     previous_learning_phase = str(tutor_context.get("learning_phase") or "")
-    learning_phase = previous_learning_phase if detected_learning_phase == "general" and previous_learning_phase else detected_learning_phase
+    learning_phase = (
+        previous_learning_phase
+        if detected_learning_phase == "general" and previous_learning_phase
+        else detected_learning_phase
+    )
     tutor_context["learning_phase"] = learning_phase
 
-    retrieved_material_chunks: List[Dict[str, Any]] = []
+    retrieved_material_chunks: list[dict[str, Any]] = []
     try:
         tutor_context, retrieved_material_chunks = _inject_material_context(
             tutor_context=tutor_context,
@@ -256,9 +266,9 @@ def _prepare_tutor_context(
 def _build_model_messages(
     request: ChatRequest,
     history: ChatHistoryService,
-    last_user_message: Optional[str],
+    last_user_message: str | None,
     user_id: str,
-) -> tuple[List[Dict[str, Any]], str]:
+) -> tuple[list[dict[str, Any]], str]:
     model_messages = [message.model_dump() for message in request.messages]
     context_policy = "full"
     if request.conversation_id is not None and last_user_message:
@@ -273,17 +283,17 @@ def _build_model_messages(
 
 
 def _finalize_conversation_response(
-    result: Dict[str, Any],
+    result: dict[str, Any],
     request: ChatRequest,
     history: ChatHistoryService,
     llm: LLMService,
     resolved: ResolvedProvider,
-    tutor_context: Dict[str, Any],
-    last_user_message: Optional[str],
+    tutor_context: dict[str, Any],
+    last_user_message: str | None,
     user_id: str,
-    session_id: Optional[int],
-    analytics: Optional[AnalyticsService] = None,
-) -> Dict[str, Any]:
+    session_id: int | None,
+    analytics: AnalyticsService | None = None,
+) -> dict[str, Any]:
     assistant_message = result.get("message", {}).get("content")
     if not last_user_message or not assistant_message:
         return result
@@ -343,11 +353,11 @@ def _generate_conversation_summary(
     llm: LLMService,
     resolved: ResolvedProvider,
     request: ChatRequest,
-    conversation: Dict[str, Any],
+    conversation: dict[str, Any],
     fallback_summary: str,
-    user_id: Optional[str],
-    session_id: Optional[int],
-    analytics: Optional[AnalyticsService] = None,
+    user_id: str | None,
+    session_id: int | None,
+    analytics: AnalyticsService | None = None,
 ) -> str:
     learning_phase = str(request.tutor_context.get("learning_phase") or "general")
     transcript = "\n".join(
@@ -379,6 +389,30 @@ def _generate_conversation_summary(
     if "error" in result:
         return fallback_summary
     return result.get("message", {}).get("content") or fallback_summary
+
+
+def _mock_e2e_chat_result(request: ChatRequest, learning_phase: str) -> tuple[dict[str, Any], ResolvedProvider]:
+    return (
+        {
+            "message": {
+                "role": "assistant",
+                "content": "E2E mock tutor response: keep going step by step.",
+            },
+            "provider": "e2e-mock",
+            "model": "e2e-mock",
+            "prompt_profile": request.prompt_profile,
+            "learning_phase": learning_phase,
+            "credential_source": "local",
+            "credential_fingerprint": None,
+        },
+        ResolvedProvider(
+            provider_id="e2e-mock",
+            api_key="e2e-mock",
+            base_url="http://127.0.0.1/e2e-mock",
+            default_model="e2e-mock",
+            source="local",
+        ),
+    )
 
 
 @router.get("/credentials", response_model=dict)
@@ -418,7 +452,9 @@ def put_credential(
             is_enabled=payload.is_enabled,
         )
     except InvalidProviderBaseURL as error:
-        raise api_error(status.HTTP_400_BAD_REQUEST, "invalid_provider_base_url", "Invalid provider base URL") from error
+        raise api_error(
+            status.HTTP_400_BAD_REQUEST, "invalid_provider_base_url", "Invalid provider base URL"
+        ) from error
     except CredentialEncryptionUnavailable as error:
         raise api_error(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -431,7 +467,7 @@ def put_credential(
 @router.patch("/credentials/{provider_id}", response_model=dict)
 def patch_credential(
     provider_id: str,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -452,7 +488,9 @@ def patch_credential(
     except KeyError as error:
         raise api_error(status.HTTP_404_NOT_FOUND, "not_found", "Credential not found") from error
     except InvalidProviderBaseURL as error:
-        raise api_error(status.HTTP_400_BAD_REQUEST, "invalid_provider_base_url", "Invalid provider base URL") from error
+        raise api_error(
+            status.HTTP_400_BAD_REQUEST, "invalid_provider_base_url", "Invalid provider base URL"
+        ) from error
     return {"credential": LLMCredentialService(db).to_safe_metadata(credential)}
 
 
@@ -592,7 +630,7 @@ def delete_conversation(
 @router.post("/chat", response_model=dict)
 def tutor_chat(
     request: ChatRequest,
-    session_id: Optional[int] = None,
+    session_id: int | None = None,
     db: Session = Depends(get_db),
     llm: LLMService = Depends(get_llm_service),
     current_user: User = Depends(get_current_user),
@@ -620,6 +658,25 @@ def tutor_chat(
         last_user_message=last_user_message,
         user_id=user_id,
     )
+
+    if settings.E2E_MOCK_LLM:
+        result, resolved = _mock_e2e_chat_result(request, learning_phase)
+        result = _finalize_conversation_response(
+            result=result,
+            request=request,
+            history=history,
+            llm=llm,
+            resolved=resolved,
+            tutor_context=tutor_context,
+            last_user_message=last_user_message,
+            user_id=user_id,
+            session_id=session_id,
+            analytics=analytics,
+        )
+        result["context_policy"] = context_policy
+        if retrieved_material_chunks:
+            result["material_context"] = {"chunks": retrieved_material_chunks}
+        return result
 
     resolved = _resolve_provider_or_raise(db, current_user, request.provider)
     result = llm.complete_chat(
@@ -665,7 +722,7 @@ def tutor_chat(
 @router.post("/hint", response_model=dict)
 def generate_hint(
     request: HintRequest,
-    session_id: Optional[int] = None,
+    session_id: int | None = None,
     db: Session = Depends(get_db),
     llm: LLMService = Depends(get_llm_service),
     current_user: User = Depends(get_current_user),
@@ -694,12 +751,12 @@ def generate_hint(
         max_tokens=200,
         temperature=0.7,
     )
-    
+
     if "error" in result:
         raise api_error(502, "llm_provider_error", "Model provider is temporarily unavailable")
     if resolved.source == "user":
         LLMCredentialService(db).record_used(resolved.credential_id)
-    
+
     return {
         "hint": result.get("message", {}).get("content"),
         "step": request.step,
@@ -712,7 +769,7 @@ def generate_hint(
 @router.post("/explain", response_model=dict)
 def explain_solution(
     request: ExplainRequest,
-    session_id: Optional[int] = None,
+    session_id: int | None = None,
     db: Session = Depends(get_db),
     llm: LLMService = Depends(get_llm_service),
     current_user: User = Depends(get_current_user),
@@ -746,12 +803,12 @@ def explain_solution(
         max_tokens=500,
         temperature=0.7,
     )
-    
+
     if "error" in result:
         raise api_error(502, "llm_provider_error", "Model provider is temporarily unavailable")
     if resolved.source == "user":
         LLMCredentialService(db).record_used(resolved.credential_id)
-    
+
     return {
         "explanation": result.get("message", {}).get("content"),
         "agent_type": "tutor",
@@ -763,7 +820,7 @@ def explain_solution(
 @router.post("/diagnose", response_model=dict)
 def diagnose_error(
     request: DiagnoseRequest,
-    session_id: Optional[int] = None,
+    session_id: int | None = None,
     db: Session = Depends(get_db),
     llm: LLMService = Depends(get_llm_service),
     current_user: User = Depends(get_current_user),
@@ -798,12 +855,12 @@ def diagnose_error(
         max_tokens=400,
         temperature=0.5,
     )
-    
+
     if "error" in result:
         raise api_error(502, "llm_provider_error", "Model provider is temporarily unavailable")
     if resolved.source == "user":
         LLMCredentialService(db).record_used(resolved.credential_id)
-    
+
     diagnosis = result.get("message", {}).get("content") or ""
     return {
         "diagnosis": diagnosis,
@@ -818,7 +875,7 @@ def diagnose_error(
 @router.post("/summary", response_model=dict)
 def session_summary(
     request: SummaryRequest,
-    session_id: Optional[int] = None,
+    session_id: int | None = None,
     db: Session = Depends(get_db),
     llm: LLMService = Depends(get_llm_service),
     current_user: User = Depends(get_current_user),
@@ -850,16 +907,15 @@ def session_summary(
         max_tokens=300,
         temperature=0.8,
     )
-    
+
     if "error" in result:
         raise api_error(502, "llm_provider_error", "Model provider is temporarily unavailable")
     if resolved.source == "user":
         LLMCredentialService(db).record_used(resolved.credential_id)
-    
+
     return {
         "summary": result.get("message", {}).get("content"),
         "agent_type": "pomodoro_coach",
         "credential_source": result.get("credential_source"),
         "credential_fingerprint": result.get("credential_fingerprint"),
     }
-

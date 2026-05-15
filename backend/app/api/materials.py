@@ -1,5 +1,6 @@
 """Study material upload and retrieval API."""
-from typing import Any, Optional
+
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Request, UploadFile
 from pydantic import BaseModel, Field
@@ -13,14 +14,13 @@ from app.services.materials import SUPPORTED_EXTENSIONS, MaterialService
 from app.utils.errors import api_error
 from app.utils.upload import max_upload_bytes, read_validated_upload
 
-
 router = APIRouter(prefix="/api/materials", tags=["materials"], dependencies=[Depends(get_current_user)])
 
 
 class MaterialSearchRequest(BaseModel):
     query: str = Field(min_length=1)
-    material_ids: Optional[list[int]] = None
-    top_k: Optional[int] = Field(default=None, ge=1, le=10)
+    material_ids: list[int] | None = None
+    top_k: int | None = Field(default=None, ge=1, le=10)
 
 
 @router.post("/upload", response_model=dict)

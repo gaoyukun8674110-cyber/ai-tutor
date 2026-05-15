@@ -1,4 +1,5 @@
 """Upload validation helpers."""
+
 from pathlib import Path
 
 from fastapi import UploadFile
@@ -49,7 +50,9 @@ async def _read_with_limit(file: UploadFile) -> bytes:
 def validate_magic_bytes(filename: str, content: bytes) -> None:
     suffix = Path(filename).suffix.lower()
     if suffix in ZIP_EXTENSIONS and not content.startswith(ZIP_SIGNATURE):
-        raise api_error(400, "invalid_upload_signature", f"{suffix} upload does not look like a valid ZIP-based document")
+        raise api_error(
+            400, "invalid_upload_signature", f"{suffix} upload does not look like a valid ZIP-based document"
+        )
     if suffix == ".pdf" and not content.startswith(PDF_SIGNATURE):
         raise api_error(400, "invalid_upload_signature", "PDF upload does not start with a PDF signature")
     if suffix in TEXT_EXTENSIONS:

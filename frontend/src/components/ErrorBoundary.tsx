@@ -45,7 +45,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             border: '1px solid var(--ai-border-strong)',
           }}
         >
-          <p className="text-sm font-medium uppercase tracking-wide" style={{ color: 'var(--ai-text-secondary)' }}>
+          <p
+            className="text-sm font-medium uppercase tracking-wide"
+            style={{ color: 'var(--ai-text-secondary)' }}
+          >
             UI Recovery
           </p>
           <h1 className="mt-3 text-2xl font-semibold">Something went wrong</h1>

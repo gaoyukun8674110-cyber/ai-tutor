@@ -1,20 +1,22 @@
 """Access and refresh token helpers."""
+
 from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
-from jwt import ExpiredSignatureError, InvalidTokenError as JwtInvalidTokenError
+from jwt import ExpiredSignatureError
+from jwt import InvalidTokenError as JwtInvalidTokenError
 
 from app.auth.exceptions import InvalidTokenError, TokenExpiredError
 from app.config import settings
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def iso_now() -> str:

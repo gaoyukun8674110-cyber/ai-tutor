@@ -1,4 +1,5 @@
 """Study material ingestion, text extraction, chunking, and retrieval."""
+
 from __future__ import annotations
 
 import hashlib
@@ -25,14 +26,12 @@ from app.services.vector_index import (
     search_snapshot,
 )
 
-
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".docx", ".pdf", ".epub"}
 WORD_RE = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
 
 class EmbeddingProvider(Protocol):
-    def embed(self, text: str) -> list[float]:
-        ...
+    def embed(self, text: str) -> list[float]: ...
 
 
 class _HtmlTextExtractor(html.parser.HTMLParser):
@@ -73,11 +72,7 @@ def _extract_docx_text(content: bytes) -> str:
     with zipfile.ZipFile(PathLikeBytes(content)) as archive:
         document_xml = archive.read("word/document.xml")
     root = ElementTree.fromstring(document_xml)
-    texts = [
-        node.text
-        for node in root.iter()
-        if node.tag.endswith("}t") and node.text and node.text.strip()
-    ]
+    texts = [node.text for node in root.iter() if node.tag.endswith("}t") and node.text and node.text.strip()]
     extracted = normalize_text("\n".join(texts))
     if not extracted:
         raise ValueError("No readable text found in DOCX file")
@@ -152,7 +147,11 @@ def chunk_text(text: str, chunk_size: int = 1200, overlap: int = 150) -> list[di
     while start < len(normalized):
         end = min(start + chunk_size, len(normalized))
         if end < len(normalized):
-            boundary = max(normalized.rfind("\n", start, end), normalized.rfind("。", start, end), normalized.rfind(".", start, end))
+            boundary = max(
+                normalized.rfind("\n", start, end),
+                normalized.rfind("。", start, end),
+                normalized.rfind(".", start, end),
+            )
             if boundary > start + chunk_size // 2:
                 end = boundary + 1
         content = normalized[start:end].strip()
@@ -219,7 +218,7 @@ def normalize_vector(vector: list[float]) -> list[float]:
 def cosine_similarity(left: list[float], right: list[float]) -> float:
     if not left or not right or len(left) != len(right):
         return 0.0
-    return sum(a * b for a, b in zip(left, right))
+    return sum(a * b for a, b in zip(left, right, strict=False))
 
 
 class MaterialService:
@@ -403,8 +402,7 @@ class MaterialService:
             return []
 
         score_by_chunk_id = {
-            chunk_id: round(max(0.0, 1 - ((distance * distance) / 2)), 6)
-            for chunk_id, distance in chunk_scores
+            chunk_id: round(max(0.0, 1 - ((distance * distance) / 2)), 6) for chunk_id, distance in chunk_scores
         }
         ordered_chunk_ids = [chunk_id for chunk_id, _distance in chunk_scores]
         chunks = (

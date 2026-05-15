@@ -1,13 +1,13 @@
 """Dashboard API endpoints."""
+
 from datetime import date
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.database import get_db
 from app.api.deps import get_current_user
+from app.database import get_db
 from app.models.user import User
 from app.services.dashboard import DashboardService
 
@@ -19,16 +19,16 @@ class DashboardTaskCreate(BaseModel):
     task: str
     duration: int = Field(default=25, ge=1, le=600)
     priority: str = "medium"
-    scheduled_date: Optional[str] = None
+    scheduled_date: str | None = None
 
 
 class DashboardTaskUpdate(BaseModel):
-    subject: Optional[str] = None
-    task: Optional[str] = None
-    duration: Optional[int] = Field(default=None, ge=1, le=600)
-    priority: Optional[str] = None
-    completed: Optional[bool] = None
-    scheduled_date: Optional[str] = None
+    subject: str | None = None
+    task: str | None = None
+    duration: int | None = Field(default=None, ge=1, le=600)
+    priority: str | None = None
+    completed: bool | None = None
+    scheduled_date: str | None = None
 
 
 class PomodoroLogCreate(BaseModel):
@@ -49,7 +49,7 @@ def dashboard_summary(
 
 @router.get("/tasks", response_model=dict)
 def dashboard_tasks(
-    scheduled_date: Optional[str] = None,
+    scheduled_date: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

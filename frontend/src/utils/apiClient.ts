@@ -82,16 +82,24 @@ export function getUserFacingError(error: unknown): string {
   const language = getCurrentUiLanguage();
 
   if (error instanceof ApiError) {
-    if (error.status === 401) return localizeClientMessage('Authentication is required. Please sign in.', language);
-    if (error.status === 403) return localizeClientMessage('You do not have permission for this action.', language);
+    if (error.status === 401)
+      return localizeClientMessage('Authentication is required. Please sign in.', language);
+    if (error.status === 403)
+      return localizeClientMessage('You do not have permission for this action.', language);
     if (error.status >= 500) {
-      console.error('Server error', { code: error.code, traceId: error.traceId, message: error.message });
+      console.error('Server error', {
+        code: error.code,
+        traceId: error.traceId,
+        message: error.message,
+      });
       const localizedMessage = localizeClientMessage(error.message, language);
       return error.traceId ? `${localizedMessage} (trace ${error.traceId})` : localizedMessage;
     }
     return localizeClientMessage(error.message, language);
   }
-  return error instanceof Error ? localizeClientMessage(error.message, language) : getDefaultErrorMessage();
+  return error instanceof Error
+    ? localizeClientMessage(error.message, language)
+    : getDefaultErrorMessage();
 }
 
 export async function parseJsonResponse<T>(response: Response): Promise<T> {
@@ -163,7 +171,11 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshInFlight;
 }
 
-async function fetchWithHeaders(path: string, options: ApiRequestOptions, token = accessToken): Promise<Response> {
+async function fetchWithHeaders(
+  path: string,
+  options: ApiRequestOptions,
+  token = accessToken,
+): Promise<Response> {
   return fetch(`${API_BASE_URL}${path}`, {
     ...options,
     credentials: 'include',
@@ -177,7 +189,11 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
   if (response.status === 401 && !options.skipAuthRefresh && !isAuthPath(path)) {
     const refreshedToken = await refreshAccessToken();
     if (refreshedToken) {
-      response = await fetchWithHeaders(path, { ...options, skipAuthRefresh: true }, refreshedToken);
+      response = await fetchWithHeaders(
+        path,
+        { ...options, skipAuthRefresh: true },
+        refreshedToken,
+      );
     } else if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('auth:logout'));
     }
@@ -186,7 +202,11 @@ export async function apiFetch<T>(path: string, options: ApiRequestOptions = {})
   return parseJsonResponse<T>(response);
 }
 
-export async function apiUpload<T>(path: string, body: FormData, options: ApiRequestOptions = {}): Promise<T> {
+export async function apiUpload<T>(
+  path: string,
+  body: FormData,
+  options: ApiRequestOptions = {},
+): Promise<T> {
   const uploadOptions = { ...options, method: options.method || 'POST', body };
   return apiFetch<T>(path, uploadOptions);
 }

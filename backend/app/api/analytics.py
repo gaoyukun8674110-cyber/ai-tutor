@@ -1,6 +1,8 @@
 """分析相关 API"""
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
+
 from app.api.deps import get_current_user
 from app.database import get_db
 from app.services.analytics import AnalyticsService
@@ -13,10 +15,10 @@ def get_question_stats(question_id: int, db: Session = Depends(get_db)):
     """获取题目统计"""
     service = AnalyticsService(db)
     stats = service.get_question_stats(question_id)
-    
+
     if not stats:
         return {"message": "No statistics available for this question"}
-    
+
     return stats
 
 
@@ -25,10 +27,10 @@ def get_skill_stats(skill_id: str, db: Session = Depends(get_db)):
     """获取知识点统计"""
     service = AnalyticsService(db)
     stats = service.get_skill_stats(skill_id)
-    
+
     if not stats:
         return {"message": "No statistics available for this skill"}
-    
+
     return stats
 
 
@@ -37,7 +39,7 @@ def get_system_stats(days: int = 7, db: Session = Depends(get_db)):
     """获取系统统计"""
     service = AnalyticsService(db)
     stats = service.get_system_stats(days)
-    
+
     return stats
 
 
@@ -50,9 +52,8 @@ def get_problematic_questions(
     """获取有质量问题的题目"""
     service = AnalyticsService(db)
     questions = service.get_problematic_questions(min_attempts, max_correct_rate)
-    
+
     return {
         "count": len(questions),
         "questions": questions,
     }
-

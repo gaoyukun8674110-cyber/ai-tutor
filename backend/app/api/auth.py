@@ -1,4 +1,5 @@
 """Authentication API routes."""
+
 from __future__ import annotations
 
 import re
@@ -8,12 +9,12 @@ from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_current_user
 from app.auth.cookies import clear_refresh_cookie, set_refresh_cookie
 from app.auth.passwords import hash_password, verify_password
 from app.auth.tokens import encode_access_token, generate_refresh_token, hash_refresh_token, iso_now, utc_now
 from app.config import settings
 from app.database import get_db
-from app.api.deps import get_current_user
 from app.models.user import RefreshToken, User
 from app.utils.errors import api_error
 
@@ -109,7 +110,9 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> dict[st
 
 
 @router.post("/login")
-def login(payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)) -> dict[str, object]:
+def login(
+    payload: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)
+) -> dict[str, object]:
     user = db.query(User).filter(User.username == payload.username).first()
     if not user or not verify_password(payload.password, user.password_hash):
         raise api_error(status.HTTP_401_UNAUTHORIZED, "invalid_credentials", "Invalid credentials")
