@@ -1,9 +1,8 @@
 """应用配置管理"""
+
 from pathlib import Path
-from typing import Optional
 
 from pydantic_settings import BaseSettings
-
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DATABASE_URL = f"sqlite:///{(BACKEND_DIR / 'tutor.db').as_posix()}"
@@ -11,12 +10,12 @@ DEFAULT_DATABASE_URL = f"sqlite:///{(BACKEND_DIR / 'tutor.db').as_posix()}"
 
 class Settings(BaseSettings):
     """应用配置"""
-    
+
     # 数据库
     DATABASE_URL: str = DEFAULT_DATABASE_URL
-    
+
     # OpenAI
-    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: str | None = None
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
     OPENAI_TEMPERATURE: float = 0.7
@@ -24,15 +23,15 @@ class Settings(BaseSettings):
     DEFAULT_LLM_PROVIDER: str = "auto"
 
     # OpenAI-compatible chat providers
-    DEEPSEEK_API_KEY: Optional[str] = None
+    DEEPSEEK_API_KEY: str | None = None
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
     DEEPSEEK_MODEL: str = "deepseek-chat"
 
-    QWEN_API_KEY: Optional[str] = None
+    QWEN_API_KEY: str | None = None
     QWEN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     QWEN_MODEL: str = "qwen-plus"
 
-    LINKAPI_API_KEY: Optional[str] = None
+    LINKAPI_API_KEY: str | None = None
     LINKAPI_BASE_URL: str = "https://api.linkapi.ai/v1"
     LINKAPI_MODEL: str = "claude-sonnet-4-20250514"
 
@@ -40,20 +39,20 @@ class Settings(BaseSettings):
     OLLAMA_MODEL: str = "llama3.1"
 
     # Per-user LLM credentials
-    LLM_CREDENTIAL_ENCRYPTION_KEY: Optional[str] = None
+    LLM_CREDENTIAL_ENCRYPTION_KEY: str | None = None
     LLM_CREDENTIAL_PREVIOUS_KEYS: str = ""
-    LLM_FINGERPRINT_HMAC_KEY: Optional[str] = None
+    LLM_FINGERPRINT_HMAC_KEY: str | None = None
     ALLOW_GLOBAL_LLM_FALLBACK: bool = True
 
     # Native provider placeholders for the next adapter iteration
-    ANTHROPIC_API_KEY: Optional[str] = None
+    ANTHROPIC_API_KEY: str | None = None
     ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
-    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-1.5-pro"
-    
+
     # 应用
     DEBUG: bool = True
-    DB_AUTO_CREATE: Optional[bool] = None
+    DB_AUTO_CREATE: bool | None = None
     LOG_LEVEL: str = "INFO"
     CORS_ORIGINS: list[str] = [
         "http://localhost:4173",
@@ -74,14 +73,15 @@ class Settings(BaseSettings):
     COOKIE_REFRESH_PATH: str = "/api/auth"
     COOKIE_SAMESITE: str = "lax"
     COOKIE_SECURE: bool = False
-    
+    E2E_MOCK_LLM: bool = False
+
     # 番茄钟
     DEFAULT_POMODORO_DURATION: int = 25  # 分钟
-    DEFAULT_BREAK_DURATION: int = 5      # 分钟
-    
+    DEFAULT_BREAK_DURATION: int = 5  # 分钟
+
     # 训练引擎
-    MAX_CONSECUTIVE_ERRORS: int = 3       # 连续错几题降难度
-    MAX_CONSECUTIVE_CORRECT: int = 3      # 连续对几题升难度
+    MAX_CONSECUTIVE_ERRORS: int = 3  # 连续错几题降难度
+    MAX_CONSECUTIVE_CORRECT: int = 3  # 连续对几题升难度
 
     # RAG / 学习资料
     RAG_UPLOAD_DIR: str = "storage/materials"
@@ -91,11 +91,10 @@ class Settings(BaseSettings):
     RAG_SEARCH_CANDIDATE_LIMIT: int = 500
     RAG_EMBEDDING_MODEL: str = "text-embedding-3-small"
     RAG_HASH_EMBEDDING_DIMENSIONS: int = 128
-    
+
     class Config:
         env_file = ".env"
         case_sensitive = True
 
 
 settings = Settings()
-

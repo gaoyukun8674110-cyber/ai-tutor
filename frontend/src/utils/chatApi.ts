@@ -169,7 +169,10 @@ export async function fetchPromptProfiles(options?: ApiRequestOptions): Promise<
   return data.profiles;
 }
 
-export async function sendTutorChat(request: TutorChatRequest, options?: ApiRequestOptions): Promise<TutorChatResponse> {
+export async function sendTutorChat(
+  request: TutorChatRequest,
+  options?: ApiRequestOptions,
+): Promise<TutorChatResponse> {
   return apiFetch<TutorChatResponse>('/api/llm/chat', {
     ...options,
     method: 'POST',
@@ -177,12 +180,20 @@ export async function sendTutorChat(request: TutorChatRequest, options?: ApiRequ
   });
 }
 
-export async function fetchTutorConversations(options?: ApiRequestOptions): Promise<TutorConversationSummary[]> {
-  const data = await apiFetch<{ conversations: TutorConversationSummary[] }>('/api/llm/conversations', options);
+export async function fetchTutorConversations(
+  options?: ApiRequestOptions,
+): Promise<TutorConversationSummary[]> {
+  const data = await apiFetch<{ conversations: TutorConversationSummary[] }>(
+    '/api/llm/conversations',
+    options,
+  );
   return data.conversations;
 }
 
-export async function searchTutorConversations(query: string, options?: ApiRequestOptions): Promise<TutorConversationSummary[]> {
+export async function searchTutorConversations(
+  query: string,
+  options?: ApiRequestOptions,
+): Promise<TutorConversationSummary[]> {
   const params = new URLSearchParams({ query });
   const data = await apiFetch<{ conversations: TutorConversationSummary[] }>(
     `/api/llm/conversations/search?${params.toString()}`,
@@ -191,7 +202,10 @@ export async function searchTutorConversations(query: string, options?: ApiReque
   return data.conversations;
 }
 
-export async function fetchTutorConversation(conversationId: number, options?: ApiRequestOptions): Promise<TutorConversationDetail> {
+export async function fetchTutorConversation(
+  conversationId: number,
+  options?: ApiRequestOptions,
+): Promise<TutorConversationDetail> {
   return apiFetch<TutorConversationDetail>(`/api/llm/conversations/${conversationId}`, options);
 }
 
@@ -205,8 +219,14 @@ export async function deleteTutorConversation(
   });
 }
 
-export async function exportTutorConversation(conversationId: number, options?: ApiRequestOptions): Promise<TutorConversationExport> {
-  return apiFetch<TutorConversationExport>(`/api/llm/conversations/${conversationId}/export`, options);
+export async function exportTutorConversation(
+  conversationId: number,
+  options?: ApiRequestOptions,
+): Promise<TutorConversationExport> {
+  return apiFetch<TutorConversationExport>(
+    `/api/llm/conversations/${conversationId}/export`,
+    options,
+  );
 }
 
 export async function fetchStudyMaterials(options?: ApiRequestOptions): Promise<StudyMaterial[]> {
@@ -214,7 +234,10 @@ export async function fetchStudyMaterials(options?: ApiRequestOptions): Promise<
   return data.materials;
 }
 
-export async function uploadStudyMaterial(file: File, options?: ApiRequestOptions): Promise<StudyMaterial> {
+export async function uploadStudyMaterial(
+  file: File,
+  options?: ApiRequestOptions,
+): Promise<StudyMaterial> {
   const formData = new FormData();
   formData.append('file', file);
   return apiUpload<StudyMaterial>('/api/materials/upload', formData, options);

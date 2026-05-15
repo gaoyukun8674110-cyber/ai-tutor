@@ -1,7 +1,7 @@
-import unittest
 import importlib.util
 import sys
 import types
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -255,9 +255,10 @@ class LLMChatTests(unittest.TestCase):
     def test_chat_composes_prompt_profile_and_calls_selected_openai_compatible_provider(self):
         service = LLMService()
 
-        with patch.object(llm_module, "OpenAI", FakeOpenAIClient), patch.object(
-            llm_module, "settings"
-        ) as fake_settings:
+        with (
+            patch.object(llm_module, "OpenAI", FakeOpenAIClient),
+            patch.object(llm_module, "settings") as fake_settings,
+        ):
             fake_settings.OPENAI_API_KEY = "secret-openai"
             fake_settings.OPENAI_BASE_URL = "https://api.openai.com/v1"
             fake_settings.OPENAI_MODEL = "gpt-4o-mini"
@@ -300,7 +301,6 @@ class LLMChatTests(unittest.TestCase):
         self.assertIn("苏格拉底", call["messages"][0]["content"])
         self.assertIn("一次方程训练", call["messages"][0]["content"])
 
-
     def _configure_fake_settings(self, fake_settings):
         fake_settings.OPENAI_API_KEY = "secret-openai"
         fake_settings.OPENAI_BASE_URL = "https://api.openai.com/v1"
@@ -327,7 +327,10 @@ class LLMChatTests(unittest.TestCase):
     def test_chat_reuses_provider_client_for_same_provider(self):
         service = LLMService()
 
-        with patch.object(llm_module, "OpenAI", FakeOpenAIClient), patch.object(llm_module, "settings") as fake_settings:
+        with (
+            patch.object(llm_module, "OpenAI", FakeOpenAIClient),
+            patch.object(llm_module, "settings") as fake_settings,
+        ):
             self._configure_fake_settings(fake_settings)
             for _ in range(2):
                 service.chat(
@@ -342,7 +345,10 @@ class LLMChatTests(unittest.TestCase):
     def test_chat_sanitizes_provider_exception(self):
         service = LLMService()
 
-        with patch.object(llm_module, "OpenAI", FailingOpenAIClient), patch.object(llm_module, "settings") as fake_settings:
+        with (
+            patch.object(llm_module, "OpenAI", FailingOpenAIClient),
+            patch.object(llm_module, "settings") as fake_settings,
+        ):
             self._configure_fake_settings(fake_settings)
             result = service.chat(
                 provider="deepseek",
@@ -371,7 +377,6 @@ class LLMChatTests(unittest.TestCase):
             )
 
         fake_logger.warning.assert_called_once()
-
 
 
 if __name__ == "__main__":

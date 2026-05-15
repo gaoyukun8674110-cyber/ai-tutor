@@ -1,13 +1,16 @@
 """主应用入口"""
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from app.api import analytics, auth, dashboard, llm, materials, questions, student, training
 from app.bootstrap import initialize_database, should_auto_create_schema
 from app.config import settings
-from app.database import engine, Base
-from app.api import analytics, auth, dashboard, llm, materials, questions, student, training
+from app.database import Base, engine
 from app.services.llm_service import LLMService
 from app.utils.errors import http_exception_handler, unhandled_exception_handler
-from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # 创建数据库表
 
@@ -36,7 +39,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.add_exception_handler(Exception, unhandled_exception_handler)
-app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+
+
+async def starlette_http_exception_adapter(request: Request, exc: Exception) -> JSONResponse:
+    if isinstance(exc, StarletteHTTPException):
+        return await http_exception_handler(request, exc)
+    return await unhandled_exception_handler(request, exc)
+
+
+app.add_exception_handler(StarletteHTTPException, starlette_http_exception_adapter)
 
 
 @app.on_event("startup")
@@ -67,6 +78,7 @@ async def security_headers(request: Request, call_next):
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
+
 # 注册路由
 app.include_router(auth.router)
 app.include_router(questions.router)
@@ -96,4 +108,5 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8001)

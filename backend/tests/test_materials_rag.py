@@ -57,8 +57,10 @@ def build_pdf_bytes(text):
     )
     stream = DecodedStreamObject()
     escaped_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    stream.set_data(f"BT /F1 12 Tf 10 100 Td ({escaped_text}) Tj ET".encode("utf-8"))
-    page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
+    stream.set_data(f"BT /F1 12 Tf 10 100 Td ({escaped_text}) Tj ET".encode())
+    page[NameObject("/Resources")] = DictionaryObject(
+        {NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})}
+    )
     page[NameObject("/Contents")] = stream
     output = io.BytesIO()
     writer.write(output)

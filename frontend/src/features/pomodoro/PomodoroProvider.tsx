@@ -123,7 +123,11 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
           });
       }
 
-      if ('Notification' in window && Notification.permission === 'granted' && result.event.kind === 'focus-complete') {
+      if (
+        'Notification' in window &&
+        Notification.permission === 'granted' &&
+        result.event.kind === 'focus-complete'
+      ) {
         new Notification('Pomodoro', {
           body: `Focus block finished. Take a ${result.event.breakMinutes}-minute break.`,
         });
@@ -177,7 +181,8 @@ export function PomodoroProvider({ children }: { children: ReactNode }) {
       resetTimer: () => setState((previous) => resetPomodoroState(previous)),
       startNextRound: () => setState((previous) => startNextPomodoroRound(previous, Date.now())),
       switchMode: (mode) => setState((previous) => switchPomodoroMode(previous, mode)),
-      adjustDuration: (mode, increment) => setState((previous) => adjustPomodoroDuration(previous, mode, increment)),
+      adjustDuration: (mode, increment) =>
+        setState((previous) => adjustPomodoroDuration(previous, mode, increment)),
     }),
     [lastEvent, logVersion, state],
   );

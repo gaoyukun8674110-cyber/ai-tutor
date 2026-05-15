@@ -1,4 +1,5 @@
 """Shared API dependencies."""
+
 from typing import Annotated
 
 from fastapi import Depends, Header, status
@@ -30,10 +31,10 @@ def get_current_user(
         raise api_error(status.HTTP_401_UNAUTHORIZED, "unauthorized", "Missing access token")
     try:
         claims = decode_access_token(token)
-    except TokenExpiredError:
-        raise api_error(status.HTTP_401_UNAUTHORIZED, "token_expired", "Access token expired")
-    except InvalidTokenError:
-        raise api_error(status.HTTP_401_UNAUTHORIZED, "invalid_token", "Invalid access token")
+    except TokenExpiredError as exc:
+        raise api_error(status.HTTP_401_UNAUTHORIZED, "token_expired", "Access token expired") from exc
+    except InvalidTokenError as exc:
+        raise api_error(status.HTTP_401_UNAUTHORIZED, "invalid_token", "Invalid access token") from exc
 
     user = db.query(User).filter(User.username == claims["sub"]).first()
     if not user or not user.is_active:

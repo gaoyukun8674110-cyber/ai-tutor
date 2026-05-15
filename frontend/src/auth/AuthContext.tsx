@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { apiFetch, setAccessToken } from '../utils/apiClient';
 import type { AuthUser, LoginResponse } from './types';
 
@@ -56,13 +64,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(payload.user);
   }, []);
 
-  const register = useCallback(async (payload: { username: string; password: string; email?: string }) => {
-    await apiFetch('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-      skipAuthRefresh: true,
-    });
-  }, []);
+  const register = useCallback(
+    async (payload: { username: string; password: string; email?: string }) => {
+      await apiFetch('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        skipAuthRefresh: true,
+      });
+    },
+    [],
+  );
 
   const logout = useCallback(async () => {
     try {

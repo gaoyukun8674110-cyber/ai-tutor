@@ -1,7 +1,10 @@
 import { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
-import rehypeSanitize, { defaultSchema, type Options as RehypeSanitizeOptions } from 'rehype-sanitize';
+import rehypeSanitize, {
+  defaultSchema,
+  type Options as RehypeSanitizeOptions,
+} from 'rehype-sanitize';
 import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
 import { normalizeMathDelimiters } from '../utils/mathContent';
