@@ -10,6 +10,24 @@ jobs:
   backend:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: tutor
+          POSTGRES_PASSWORD: tutor
+          POSTGRES_DB: tutor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tutor -d tutor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql+psycopg://tutor:tutor@localhost:5432/tutor
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -47,10 +65,7 @@ jobs:
 
       - name: Smoke-test Alembic migrations
         working-directory: backend
-        run: |
-          db_path="$(mktemp -u)"
-          DATABASE_URL="sqlite:///$db_path" python -m alembic upgrade head
-          rm -f "$db_path"
+        run: python -m alembic upgrade head
 
       - name: Validate Tutor eval dataset
         working-directory: backend
@@ -109,6 +124,21 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: tutor
+          POSTGRES_PASSWORD: tutor
+          POSTGRES_DB: tutor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U tutor -d tutor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -141,14 +171,19 @@ jobs:
 
       - name: Run browser e2e against backend
         shell: bash
+        env:
+          DATABASE_URL: postgresql+psycopg://tutor:tutor@localhost:5432/tutor
+          E2E_MOCK_LLM: "true"
+          # e2e uses the deterministic hash embedding provider (no real API calls).
+          RAG_EMBEDDING_MODE: hash
+          RAG_HASH_EMBEDDING_DIMENSIONS: "128"
+          RAG_VECTOR_DIM: "128"
         run: |
           set -euo pipefail
-          db_path="$RUNNER_TEMP/ai-tutor-e2e.sqlite"
-          rm -f "$db_path"
 
           cd backend
-          DATABASE_URL="sqlite:///$db_path" python -m alembic upgrade head
-          DATABASE_URL="sqlite:///$db_path" E2E_MOCK_LLM=true python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 &
+          python -m alembic upgrade head
+          python -m uvicorn app.main:app --host 0.0.0.0 --port 8001 &
           backend_pid=$!
           cd ../frontend
           VITE_API_BASE_URL="http://127.0.0.1:8001" node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4173 &

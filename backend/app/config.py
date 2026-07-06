@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     RAG_SEARCH_CANDIDATE_LIMIT: int = 500
     RAG_VECTOR_DIM: int = 1536
     RAG_HNSW_EF_SEARCH: int = 40
+    # Embedding provider: "openai" (production, requires RAG_EMBEDDING_API_KEY)
+    # or "hash" (deterministic local vectors for tests/CI, no API calls).
+    RAG_EMBEDDING_MODE: str = "openai"
     RAG_EMBEDDING_API_KEY: str | None = None
     RAG_EMBEDDING_BASE_URL: str = "https://api.openai.com/v1"
     RAG_EMBEDDING_MODEL: str = "text-embedding-3-small"

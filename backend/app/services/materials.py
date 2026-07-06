@@ -204,6 +204,8 @@ class OpenAIEmbeddingProvider:
 
 
 def default_embedding_provider() -> EmbeddingProvider:
+    if settings.RAG_EMBEDDING_MODE == "hash":
+        return HashEmbeddingProvider()
     if not settings.RAG_EMBEDDING_API_KEY:
         raise RuntimeError("RAG_EMBEDDING_API_KEY must be set for material embeddings")
     return OpenAIEmbeddingProvider(
