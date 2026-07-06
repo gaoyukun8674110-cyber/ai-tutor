@@ -18,6 +18,7 @@ scripts/   Root-level helper scripts for local development and validation
 Start the backend:
 
 ```powershell
+docker compose up -d db
 cd backend
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -38,6 +39,8 @@ Defaults:
 - Backend: `http://localhost:8001`
 - Frontend: `http://localhost:4173`
 - Frontend API base: `VITE_API_BASE_URL`, defaulting to `http://localhost:8001`
+- Database: PostgreSQL + pgvector, default `postgresql+psycopg://tutor:tutor@localhost:55432/tutor`
+- RAG embeddings use `RAG_EMBEDDING_API_KEY` and `RAG_EMBEDDING_BASE_URL=https://api.openai.com/v1`, independent of chat provider settings.
 - Local migrations may create a demo account for development. Replace or disable any seeded demo credentials before exposing a deployment.
 - Auth transport: short-lived JWT access tokens in `Authorization: Bearer ...`, plus an HttpOnly refresh cookie scoped to `/api/auth`.
 

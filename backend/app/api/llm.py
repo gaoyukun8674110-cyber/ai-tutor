@@ -235,7 +235,7 @@ def _inject_material_context(
 def _prepare_tutor_context(
     request: ChatRequest,
     llm: LLMService,
-    material_service: MaterialService,
+    db: Session,
     user_id: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str | None, str]:
     last_user_message = _last_user_message(request.messages)
@@ -252,6 +252,7 @@ def _prepare_tutor_context(
 
     retrieved_material_chunks: list[dict[str, Any]] = []
     try:
+        material_service = MaterialService(db)
         tutor_context, retrieved_material_chunks = _inject_material_context(
             tutor_context=tutor_context,
             last_user_message=last_user_message,
@@ -651,7 +652,7 @@ async def tutor_chat(
     tutor_context, retrieved_material_chunks, last_user_message, learning_phase = _prepare_tutor_context(
         request=request,
         llm=llm,
-        material_service=MaterialService(db),
+        db=db,
         user_id=user_id,
     )
     model_messages, context_policy = _build_model_messages(

@@ -204,13 +204,13 @@ class LLMService:
             },
             "gemini": {
                 "name": "Google Gemini",
-                "adapter": "native",
+                "adapter": "openai-compatible",
                 "api_key": settings.GEMINI_API_KEY,
-                "base_url": None,
+                "base_url": settings.GEMINI_BASE_URL,
                 "default_model": settings.GEMINI_MODEL,
-                "models": [settings.GEMINI_MODEL],
+                "models": [settings.GEMINI_MODEL, "gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
                 "requires_api_key": True,
-                "implemented": False,
+                "implemented": True,
             },
         }
 

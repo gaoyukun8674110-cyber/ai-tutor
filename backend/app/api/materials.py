@@ -36,8 +36,8 @@ async def upload_material(
     if content_length and int(content_length) > max_upload_bytes() + 1024 * 1024:
         raise api_error(413, "upload_too_large", f"Upload exceeds {settings.MAX_UPLOAD_SIZE_MB} MB limit")
 
-    service = MaterialService(db)
     content = await read_validated_upload(file)
+    service = MaterialService(db)
     try:
         material = service.create_pending_material_from_bytes(
             filename=file.filename or "material",

@@ -37,12 +37,13 @@ def _seed_test_user(connection) -> None:
         sa.text(
             """
             INSERT INTO users (username, email, password_hash, is_active, created_at, updated_at, last_login_at)
-            VALUES (:username, NULL, :password_hash, 1, :created_at, :updated_at, NULL)
+            VALUES (:username, NULL, :password_hash, :is_active, :created_at, :updated_at, NULL)
             """
         ),
         {
             "username": "test-01",
             "password_hash": password_hash,
+            "is_active": True,
             "created_at": now,
             "updated_at": now,
         },

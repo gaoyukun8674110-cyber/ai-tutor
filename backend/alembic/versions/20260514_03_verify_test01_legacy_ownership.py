@@ -25,8 +25,8 @@ def _table_exists(connection, table_name: str) -> bool:
 def upgrade() -> None:
     connection = op.get_bind()
     demo_user = connection.execute(
-        sa.text("SELECT id FROM users WHERE username = :username AND is_active = 1"),
-        {"username": "test-01"},
+        sa.text("SELECT id FROM users WHERE username = :username AND is_active = :is_active"),
+        {"username": "test-01", "is_active": True},
     ).first()
     if not demo_user:
         raise RuntimeError("expected active demo user test-01 after auth migration")

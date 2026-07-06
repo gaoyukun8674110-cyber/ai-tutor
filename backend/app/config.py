@@ -7,7 +7,7 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-DEFAULT_DATABASE_URL = f"sqlite:///{(BACKEND_DIR / 'tutor.db').as_posix()}"
+DEFAULT_DATABASE_URL = "postgresql+psycopg://tutor:tutor@localhost:55432/tutor"
 logger = logging.getLogger(__name__)
 _warned_ephemeral_jwt_secret = False
 
@@ -53,7 +53,8 @@ class Settings(BaseSettings):
     ANTHROPIC_API_KEY: str | None = None
     ANTHROPIC_MODEL: str = "claude-3-5-sonnet-latest"
     GEMINI_API_KEY: str | None = None
-    GEMINI_MODEL: str = "gemini-1.5-pro"
+    GEMINI_BASE_URL: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    GEMINI_MODEL: str = "gemini-2.0-flash"
 
     # 应用
     DEBUG: bool = True
@@ -94,8 +95,12 @@ class Settings(BaseSettings):
     RAG_CHUNK_OVERLAP: int = 150
     RAG_TOP_K: int = 5
     RAG_SEARCH_CANDIDATE_LIMIT: int = 500
+    RAG_VECTOR_DIM: int = 1536
+    RAG_HNSW_EF_SEARCH: int = 40
+    RAG_EMBEDDING_API_KEY: str | None = None
+    RAG_EMBEDDING_BASE_URL: str = "https://api.openai.com/v1"
     RAG_EMBEDDING_MODEL: str = "text-embedding-3-small"
-    RAG_HASH_EMBEDDING_DIMENSIONS: int = 128
+    RAG_HASH_EMBEDDING_DIMENSIONS: int | None = None
 
     def model_post_init(self, __context: object) -> None:
         global _warned_ephemeral_jwt_secret
