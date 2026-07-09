@@ -14,6 +14,8 @@ from typing import Any, Protocol
 class ToolRegistryProtocol(Protocol):
     def get(self, name: str) -> Any: ...
 
+    def has(self, name: str) -> bool: ...
+
 
 @dataclass(slots=True)
 class AgentContext:

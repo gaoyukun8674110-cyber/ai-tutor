@@ -68,7 +68,7 @@ class ReviewSchedulerService:
         profile = self.db.query(LearnerProfile).filter(LearnerProfile.student_id == student_id).first()
         if profile and not profile.review_enabled:
             return False
-        if not self._frequency_allows_review(student_id, profile.review_frequency if profile else "weekly"):
+        if not self._frequency_allows_review(student_id, str(profile.review_frequency) if profile else "weekly"):
             return False
         return (
             self._has_low_effective_mastery(student_id)
@@ -103,7 +103,7 @@ class ReviewSchedulerService:
         if not latest:
             return True
         try:
-            created_at = datetime.fromisoformat(latest.created_at)
+            created_at = datetime.fromisoformat(str(latest.created_at))
         except ValueError:
             return True
         return datetime.now(created_at.tzinfo) - created_at >= timedelta(days=7)
@@ -118,7 +118,7 @@ class ReviewSchedulerService:
         if not latest:
             return True
         try:
-            created_at = datetime.fromisoformat(latest.created_at)
+            created_at = datetime.fromisoformat(str(latest.created_at))
         except ValueError:
             return True
         frequency_days = {"daily": 1, "weekly": 7, "monthly": 30}.get((review_frequency or "weekly").lower(), 7)

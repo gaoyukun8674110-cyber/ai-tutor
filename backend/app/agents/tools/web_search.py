@@ -61,7 +61,8 @@ class TavilyProvider:
             response.raise_for_status()
             payload = response.json()
 
-        results = payload.get("results") if isinstance(payload, dict) else []
+        raw_results = payload.get("results") if isinstance(payload, dict) else None
+        results = raw_results if isinstance(raw_results, list) else []
         normalized: list[dict[str, Any]] = []
         for result in results[:max_results]:
             if not isinstance(result, dict):

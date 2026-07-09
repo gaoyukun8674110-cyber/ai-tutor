@@ -94,6 +94,8 @@ class ReviewerAgent(BaseAgent):
         session_id: int | None,
         analytics: Any,
     ) -> str | None:
+        if self.llm is None:
+            return None
         prompt = "请为 AI Tutor 学生生成一段简短复盘建议，基于以下薄弱知识点，输出 120 字以内中文：\n" f"{weak_skills}"
         result = self.llm.complete_chat(
             resolved=resolved,
