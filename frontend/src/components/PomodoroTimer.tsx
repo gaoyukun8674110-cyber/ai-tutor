@@ -258,10 +258,9 @@ export function PomodoroTimer({
                 cx="96"
                 cy="96"
                 r="88"
-                stroke="currentColor"
+                stroke="var(--ai-border-soft)"
                 strokeWidth="8"
                 fill="none"
-                className="text-gray-300/30"
               />
               <circle
                 cx="96"

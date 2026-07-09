@@ -4,8 +4,8 @@ import type { ThemeTokens } from './settings';
 export function cardSurfaceStyle(tokens: ThemeTokens): CSSProperties {
   return {
     background: tokens.surface,
-    backdropFilter: 'blur(14px)',
-    border: tokens.borderStrong,
+    border: tokens.borderSoft,
+    borderRadius: 16,
     boxShadow: tokens.shadow,
   };
 }
@@ -14,6 +14,7 @@ export function panelSurfaceStyle(tokens: ThemeTokens): CSSProperties {
   return {
     background: tokens.surfaceMuted,
     border: tokens.borderSoft,
+    borderRadius: 12,
   };
 }
 
@@ -21,6 +22,7 @@ export function chipStyle(tokens: ThemeTokens): CSSProperties {
   return {
     background: tokens.surfaceAccent,
     border: tokens.borderSoft,
+    borderRadius: 8,
     color: tokens.textPrimary,
   };
 }
@@ -29,8 +31,9 @@ export function inputSurfaceStyle(tokens: ThemeTokens): CSSProperties {
   return {
     background: tokens.inputSurface,
     border: tokens.borderSubtle,
+    borderRadius: 10,
     color: tokens.textPrimary,
-    caretColor: tokens.accentSecondary,
+    caretColor: tokens.accentPrimary,
   };
 }
 
@@ -62,8 +65,8 @@ export function primaryActionStyle(tokens: ThemeTokens): CSSProperties {
   return {
     background: tokens.primaryActionGradient,
     border: tokens.borderStrong,
+    borderRadius: 12,
     color: tokens.textInverted,
-    backdropFilter: 'blur(15px)',
   };
 }
 
@@ -71,7 +74,7 @@ export function chatBubbleStyle(tokens: ThemeTokens, isUser: boolean): CSSProper
   return {
     background: isUser ? tokens.chatUserBubble : tokens.chatAssistantBubble,
     border: isUser ? tokens.chatUserBorder : tokens.chatAssistantBorder,
-    borderRadius: 24,
+    borderRadius: 18,
     color: isUser ? tokens.chatUserText : tokens.chatAssistantText,
     boxShadow: isUser ? tokens.shadowSoft : 'none',
   };

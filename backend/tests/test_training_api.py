@@ -11,7 +11,7 @@ from app.api.deps import get_current_user
 from app.api.training import router as training_router
 from app.database import Base, get_db
 from app.models.session import LearningGoal, SessionStatus, TrainingSession
-from app.models.student import Student
+from app.models.student import Student, StudentMastery
 from app.models.user import User
 
 
@@ -78,6 +78,33 @@ class TrainingApiOwnershipTests(unittest.TestCase):
         ]
 
         self.assertEqual([response.status_code for response in responses], [404, 404, 404, 404])
+
+    def test_create_session_uses_weak_skills_when_target_skills_empty(self):
+        now = datetime(2026, 5, 1, 9, 0).isoformat()
+        alice = Student(user_id="alice", username="Alice", created_at=now, updated_at=now)
+        self.db.add(alice)
+        self.db.flush()
+        self.db.add(
+            StudentMastery(
+                student_id=alice.id,
+                skill_id="linear-equations",
+                skill_name="Linear equations",
+                mastery_score=0.2,
+                bkt_p_known=0.2,
+                bkt_half_life=3,
+                last_practiced_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        self.db.commit()
+
+        response = self.client.post("/api/training/sessions", json={"target_skills": None})
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["target_skills"], ["linear-equations"])
+        self.assertEqual(payload["target_skill_sources"][0]["source"], "weak")
 
 
 if __name__ == "__main__":

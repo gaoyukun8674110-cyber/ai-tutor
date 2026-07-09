@@ -136,7 +136,11 @@ export function RegisterPage() {
           required
         />
 
-        {error ? <p className="mb-4 text-sm text-red-500">{error}</p> : null}
+        {error ? (
+          <p className="mb-4 text-sm" style={{ color: tokens.danger }}>
+            {error}
+          </p>
+        ) : null}
 
         <Button
           type="submit"

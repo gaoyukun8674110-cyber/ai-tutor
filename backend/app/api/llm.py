@@ -6,9 +6,12 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.agents import Orchestrator
+from app.agents.tools import LearnerStoreTool, MathTool, RetrieverTool, ToolRegistry, WebSearchTool
 from app.api.deps import get_current_user
 from app.config import settings
 from app.database import get_db
@@ -27,6 +30,7 @@ from app.services.llm_credential_service import (
 from app.services.llm_provider_registry import global_provider_credentials, provider_registry
 from app.services.llm_service import LLMService
 from app.services.materials import MaterialService
+from app.services.student_model import StudentModelService
 from app.utils.errors import api_error, safe_llm_error
 
 router = APIRouter(prefix="/api/llm", tags=["llm"], dependencies=[Depends(get_current_user)])
@@ -94,6 +98,22 @@ def get_llm_service(request: Request) -> LLMService:
         llm_service = LLMService()
         request.app.state.llm_service = llm_service
     return llm_service
+
+
+def _build_agent_tools(db: Session, llm: LLMService) -> ToolRegistry:
+    tools = ToolRegistry()
+    tools.register("retriever", RetrieverTool(db))
+    tools.register("math", MathTool(llm.math_tools))
+    tools.register("learner_store", LearnerStoreTool(db))
+    tools.register("web_search", WebSearchTool())
+    return tools
+
+
+def get_orchestrator(
+    db: Session = Depends(get_db),
+    llm: LLMService = Depends(get_llm_service),
+) -> Orchestrator:
+    return Orchestrator(llm, tools=_build_agent_tools(db, llm))
 
 
 def _validate_provider_for_write(provider_id: str) -> None:
@@ -201,6 +221,35 @@ def _normalize_material_ids(raw_material_ids: Any) -> list[int] | None:
     return material_ids
 
 
+def should_web_search(
+    user_message: str | None,
+    retrieved_chunks: list[dict[str, Any]],
+    *,
+    fact_check_required: bool = False,
+    rag_min_score: float | None = None,
+) -> bool:
+    text = (user_message or "").strip().lower()
+    if not text:
+        return False
+
+    explicit_keywords = ["联网", "搜一下", "查一下最新", "网上查", "web search", "search the web", "look up"]
+    timely_keywords = ["最新", "今年", "版本", "赛事", "新闻", "today", "latest", "current", "2026"]
+    if any(keyword in text for keyword in explicit_keywords):
+        return True
+    if fact_check_required:
+        return True
+    if any(keyword in text for keyword in timely_keywords):
+        return True
+    if not retrieved_chunks:
+        return True
+
+    threshold = settings.RAG_MIN_SCORE if rag_min_score is None else rag_min_score
+    scores = [chunk.get("score") for chunk in retrieved_chunks if isinstance(chunk.get("score"), int | float)]
+    if not scores:
+        return True
+    return max(float(score) for score in scores) < threshold
+
+
 def _inject_material_context(
     tutor_context: dict[str, Any],
     last_user_message: str | None,
@@ -232,11 +281,49 @@ def _inject_material_context(
     return next_context, chunks
 
 
+def _inject_web_context(
+    tutor_context: dict[str, Any],
+    last_user_message: str | None,
+    retrieved_chunks: list[dict[str, Any]],
+    tools: ToolRegistry | None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    next_context = dict(tutor_context)
+    if not should_web_search(
+        last_user_message,
+        retrieved_chunks,
+        fact_check_required=bool(next_context.get("fact_check_required")),
+    ):
+        next_context["web_search_used"] = False
+        return next_context, []
+
+    try:
+        web_search = tools.get("web_search") if tools else WebSearchTool()
+        web_chunks = web_search.search(last_user_message or "")
+    except Exception:
+        web_chunks = []
+
+    if not web_chunks:
+        next_context["web_search_used"] = False
+        return next_context, []
+
+    material_context = dict(next_context.get("material_context") or {})
+    combined_chunks = [*retrieved_chunks, *web_chunks]
+    material_context["chunks"] = combined_chunks
+    next_context["material_context"] = material_context
+    next_context["web_search_used"] = True
+    used_tools = list(next_context.get("used_tools") or [])
+    if "web_search" not in used_tools:
+        used_tools.append("web_search")
+    next_context["used_tools"] = used_tools
+    return next_context, web_chunks
+
+
 def _prepare_tutor_context(
     request: ChatRequest,
     llm: LLMService,
     db: Session,
     user_id: str,
+    tools: ToolRegistry | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], str | None, str]:
     last_user_message = _last_user_message(request.messages)
     tutor_context = dict(request.tutor_context)
@@ -262,6 +349,20 @@ def _prepare_tutor_context(
         )
     except Exception:
         tutor_context["material_context_error"] = "Material search is temporarily unavailable"
+
+    web_chunks: list[dict[str, Any]] = []
+    try:
+        tutor_context, web_chunks = _inject_web_context(
+            tutor_context=tutor_context,
+            last_user_message=last_user_message,
+            retrieved_chunks=retrieved_material_chunks,
+            tools=tools,
+        )
+    except Exception:
+        tutor_context["web_search_used"] = False
+
+    if web_chunks:
+        retrieved_material_chunks = [*retrieved_material_chunks, *web_chunks]
 
     return tutor_context, retrieved_material_chunks, last_user_message, learning_phase
 
@@ -548,7 +649,10 @@ def provider_metadata(
     current_user: User = Depends(get_current_user),
 ):
     """获取可用模型 Provider 元数据，不返回任何 API Key"""
-    return _safe_provider_metadata_for_user(db, current_user)
+    try:
+        return _safe_provider_metadata_for_user(db, current_user)
+    except SQLAlchemyError:
+        return llm.get_provider_metadata()
 
 
 @router.get("/prompt-profiles", response_model=dict)
@@ -636,12 +740,15 @@ async def tutor_chat(
     session_id: int | None = None,
     db: Session = Depends(get_db),
     llm: LLMService = Depends(get_llm_service),
+    orchestrator: Orchestrator = Depends(get_orchestrator),
     current_user: User = Depends(get_current_user),
 ):
     """统一 Tutor 对话入口，支持多 Provider 后端代理"""
     user_id = current_user.username
     analytics = AnalyticsService(db)
     history = ChatHistoryService(db)
+    student_service = StudentModelService(db)
+    student = student_service.get_or_create_student(user_id)
 
     conversation_before = None
     if request.conversation_id is not None:
@@ -654,6 +761,7 @@ async def tutor_chat(
         llm=llm,
         db=db,
         user_id=user_id,
+        tools=orchestrator.tools,
     )
     model_messages, context_policy = _build_model_messages(
         request=request,
@@ -678,13 +786,15 @@ async def tutor_chat(
         )
         result["context_policy"] = context_policy
         result["material_context_error"] = tutor_context.get("material_context_error")
+        result["web_search_used"] = tutor_context.get("web_search_used", False)
+        result["used_tools"] = tutor_context.get("used_tools", [])
         if retrieved_material_chunks:
             result["material_context"] = {"chunks": retrieved_material_chunks}
         return result
 
     resolved = _resolve_provider_or_raise(db, current_user, request.provider)
     result = await run_in_threadpool(
-        llm.complete_chat,
+        orchestrator.run_chat,
         resolved=resolved,
         model=request.model,
         messages=model_messages,
@@ -693,6 +803,7 @@ async def tutor_chat(
         tutor_context=tutor_context,
         agent_type=f"tutor_chat:{request.prompt_profile}:{resolved.provider_id}",
         user_id=user_id,
+        student_id=student.id,
         session_id=session_id,
         analytics=analytics,
     )
@@ -719,6 +830,8 @@ async def tutor_chat(
     result["context_policy"] = context_policy
     result["learning_phase"] = result.get("learning_phase", learning_phase)
     result["material_context_error"] = tutor_context.get("material_context_error")
+    result["web_search_used"] = result.get("web_search_used", tutor_context.get("web_search_used", False))
+    result["used_tools"] = result.get("used_tools", tutor_context.get("used_tools", []))
     if retrieved_material_chunks:
         result["material_context"] = {"chunks": retrieved_material_chunks}
 

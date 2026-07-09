@@ -9,9 +9,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from app.agents.tutor import TeachingPolicy  # noqa: E402
 
 REQUIRED_CASE_FIELDS = {"id", "category", "prompt_profile", "messages", "expectations"}
 REQUIRED_EXPECTATION_FIELDS = {"required_behaviors", "forbidden_behaviors"}
@@ -102,12 +109,36 @@ def load_cases(path: Path) -> list[dict[str, Any]]:
 def summarize_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
     categories = Counter(case["category"] for case in cases)
     prompt_profiles = Counter(case["prompt_profile"] for case in cases)
+    teaching_policy_assertions = run_teaching_policy_assertions(cases)
     return {
         "total_cases": len(cases),
         "categories": dict(sorted(categories.items())),
         "prompt_profiles": dict(sorted(prompt_profiles.items())),
+        "teaching_policy_assertions": teaching_policy_assertions,
         "mode": "dry_run_schema_only",
     }
+
+
+def run_teaching_policy_assertions(cases: list[dict[str, Any]]) -> dict[str, Any]:
+    checked = 0
+    for case in cases:
+        expected_strategy = case["expectations"].get("expected_teaching_strategy")
+        if not expected_strategy:
+            continue
+
+        tutor_context = dict(case.get("tutor_context") or {})
+        actual_strategy = TeachingPolicy.select(
+            error_type=tutor_context.get("error_type"),
+            signals=tutor_context.get("signals") or {},
+            mode=tutor_context.get("mode"),
+        )
+        if actual_strategy != expected_strategy:
+            raise ValueError(
+                f"Case {case['id']} expected teaching strategy '{expected_strategy}' " f"but got '{actual_strategy}'"
+            )
+        checked += 1
+
+    return {"checked": checked, "failed": 0}
 
 
 def main() -> None:
@@ -135,6 +166,9 @@ def main() -> None:
     print("Categories:")
     for category, count in summary["categories"].items():
         print(f"- {category}: {count}")
+    policy_checked = summary["teaching_policy_assertions"]["checked"]
+    if policy_checked:
+        print(f"TeachingPolicy assertions: {policy_checked} passed")
     print("Mode: dry-run schema validation only; no LLM judge is executed yet.")
 
 

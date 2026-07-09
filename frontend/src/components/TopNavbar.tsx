@@ -1,4 +1,4 @@
-import { Brain, KeyRound, Languages, LogOut, Moon, Sun } from 'lucide-react';
+import { KeyRound, Languages, LogOut, Moon, Sun } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useSettings } from '../utils/settings';
@@ -10,9 +10,8 @@ export function TopNavbar() {
 
   const navStyle = {
     background: tokens.surfaceMuted,
-    backdropFilter: 'blur(15px)',
     borderBottom: tokens.borderSoft,
-    boxShadow: tokens.shadow,
+    boxShadow: tokens.shadowSoft,
   };
 
   const chipStyle = {
@@ -21,31 +20,55 @@ export function TopNavbar() {
     color: tokens.textPrimary,
   };
 
+  const serif = "'Noto Serif SC', 'Songti SC', 'Georgia', serif";
+
   return (
-    <header className="sticky top-0 z-50 w-full px-0 shadow-lg" style={navStyle}>
+    <header className="sticky top-0 z-50 w-full px-0" style={navStyle}>
       <div className="mx-auto max-w-7xl px-6">
         <div className="flex h-16 items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl shadow-md"
-              style={chipStyle}
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-3"
+            aria-label={t('返回书斋', 'Back to study')}
+          >
+            {/* 砚台朱印 —— 品牌落款 */}
+            <span
+              className="relative flex h-10 w-10 items-center justify-center rounded-[10px]"
+              style={{
+                background: 'var(--ai-seal)',
+                color: '#f4e9df',
+                fontFamily: serif,
+                fontWeight: 700,
+                fontSize: 22,
+                boxShadow: '0 6px 16px rgba(158, 74, 60, 0.28)',
+              }}
             >
-              <Brain className="h-5 w-5" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold" style={{ color: tokens.textPrimary }}>
-                AI Tutor
+              <span
+                className="pointer-events-none absolute rounded-md"
+                style={{ inset: 4, border: '1px solid rgba(244, 233, 223, 0.5)' }}
+              />
+              砚
+            </span>
+            <div className="text-left">
+              <h1
+                className="text-lg leading-none"
+                style={{ color: tokens.textPrimary, fontFamily: serif, fontWeight: 700 }}
+              >
+                {t('砚思', 'Inkwell')}
               </h1>
-              <p className="text-xs" style={{ color: tokens.textSecondary }}>
-                {t('学习工作台', 'Study workspace')}
+              <p
+                className="mt-1 text-[11px] uppercase"
+                style={{ color: tokens.textMuted, letterSpacing: '0.28em' }}
+              >
+                Inkwell Tutor
               </p>
             </div>
-          </div>
+          </button>
 
           <div className="flex items-center gap-3">
             <button
               onClick={toggleLanguage}
-              className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
               style={chipStyle}
               aria-label="toggle language"
             >
@@ -55,12 +78,12 @@ export function TopNavbar() {
 
             <button
               onClick={toggleTheme}
-              className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors"
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
               style={chipStyle}
               aria-label="toggle theme"
             >
               {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-              {theme === 'light' ? t('夜间模式', 'Night mode') : t('日间模式', 'Day mode')}
+              {theme === 'light' ? t('夜读', 'Night') : t('日课', 'Day')}
             </button>
 
             <div
@@ -85,7 +108,7 @@ export function TopNavbar() {
 
             <button
               onClick={() => navigate('/settings/model')}
-              className="flex h-10 w-10 items-center justify-center rounded-xl transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors"
               style={chipStyle}
               aria-label="model settings"
               title={t('模型配置', 'Model settings')}
@@ -95,7 +118,7 @@ export function TopNavbar() {
 
             <button
               onClick={() => void logout()}
-              className="flex h-10 w-10 items-center justify-center rounded-xl transition-colors"
+              className="flex h-10 w-10 items-center justify-center rounded-lg transition-colors"
               style={chipStyle}
               aria-label="logout"
             >

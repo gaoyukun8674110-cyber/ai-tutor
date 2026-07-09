@@ -7,11 +7,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import analytics, auth, dashboard, llm, materials, questions, student, training
+from app.api import analytics, auth, dashboard, llm, materials, questions, review, student, training
 from app.bootstrap import initialize_database, should_auto_create_schema
 from app.config import settings
-from app.database import Base, engine
+from app.database import Base, SessionLocal, engine
 from app.services.llm_service import LLMService
+from app.services.review_scheduler import ReviewScheduler
 from app.utils.errors import http_exception_handler, unhandled_exception_handler
 
 
@@ -26,7 +27,12 @@ async def lifespan(app: FastAPI):
         ),
     )
     app.state.llm_service = LLMService()
-    yield
+    app.state.review_scheduler = ReviewScheduler(SessionLocal, app.state.llm_service)
+    app.state.review_scheduler.start()
+    try:
+        yield
+    finally:
+        app.state.review_scheduler.shutdown()
 
 
 # 创建数据库表
@@ -82,6 +88,7 @@ app.include_router(questions.router)
 app.include_router(training.router)
 app.include_router(student.router)
 app.include_router(llm.router)
+app.include_router(review.router)
 app.include_router(analytics.router)
 app.include_router(dashboard.router)
 app.include_router(materials.router)

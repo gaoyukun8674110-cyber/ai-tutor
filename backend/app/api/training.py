@@ -4,10 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.agents.base import AgentContext
+from app.agents.planner import PlannerAgent
+from app.agents.tools import LearnerStoreTool, ToolRegistry
 from app.api.deps import get_current_user
 from app.database import get_db
 from app.models.session import LearningGoal, TrainingSession
-from app.models.student import Student
+from app.models.student import ReviewReport, Student
 from app.models.user import User
 from app.services.analytics import AnalyticsService
 from app.services.training_engine import TrainingEngine
@@ -40,6 +43,39 @@ def _require_session(session_id: int, current_user: User, db: Session) -> Traini
     return session
 
 
+def _planned_target_skills(db: Session, student_id: int) -> tuple[list[str] | None, list[dict]]:
+    latest_report = (
+        db.query(ReviewReport)
+        .filter(ReviewReport.student_id == student_id)
+        .order_by(ReviewReport.created_at.desc())
+        .first()
+    )
+    if latest_report:
+        targets = list((latest_report.report or {}).get("target_skills") or [])
+        if targets:
+            return [str(target["skill_id"]) for target in targets if target.get("skill_id")], targets
+
+    tools = ToolRegistry({"learner_store": LearnerStoreTool(db)})
+    weak_skills = tools.get("learner_store").weak_skills(student_id, k=3)
+    if not weak_skills:
+        return None, []
+
+    planner_result = PlannerAgent().run(
+        AgentContext(user_id="", student_id=student_id, tools=tools),
+        {"mastery_info": {"recommended_skills": [skill["skill_id"] for skill in weak_skills]}},
+    )
+    target_skills = list(planner_result.state_updates.get("target_skills") or [])
+    return target_skills, [
+        {
+            "skill_id": skill["skill_id"],
+            "skill_name": skill.get("skill_name"),
+            "source": "weak",
+        }
+        for skill in weak_skills
+        if skill["skill_id"] in target_skills
+    ]
+
+
 @router.post("/sessions", response_model=dict)
 def create_session(
     session_data: SessionCreate,
@@ -57,13 +93,25 @@ def create_session(
     student = student_service.get_or_create_student(current_user.username)
 
     try:
+        target_skills = session_data.target_skills
+        target_skill_sources: list[dict] = []
+        if not target_skills:
+            target_skills, target_skill_sources = _planned_target_skills(db, student.id)
+
         session = engine.create_session(
             student_id=student.id,
-            target_skills=session_data.target_skills,
+            target_skills=target_skills,
             target_chapter=session_data.target_chapter,
             learning_goal=LearningGoal(session_data.learning_goal),
             duration_minutes=session_data.duration_minutes,
         )
+        if target_skill_sources:
+            session.session_plan = {
+                **dict(session.session_plan or {}),
+                "target_skill_sources": target_skill_sources,
+            }
+            db.commit()
+            db.refresh(session)
 
         analytics.log_behavior(
             log_type="session",
@@ -76,6 +124,8 @@ def create_session(
             "session_id": session.id,
             "status": session.status.value,
             "message": "Session created successfully",
+            "target_skills": session.target_skills,
+            "target_skill_sources": target_skill_sources,
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

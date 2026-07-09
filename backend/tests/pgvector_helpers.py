@@ -17,5 +17,8 @@ def make_pgvector_session_factory():
     with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
     Base.metadata.drop_all(bind=engine)
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        for type_name in ["questiontype", "questionstatus", "difficultylevel", "sessionstatus", "learninggoal"]:
+            connection.execute(text(f"DROP TYPE IF EXISTS {type_name} CASCADE"))
     Base.metadata.create_all(bind=engine)
     return engine, sessionmaker(autocommit=False, autoflush=False, bind=engine)

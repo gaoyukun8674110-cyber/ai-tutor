@@ -2,6 +2,7 @@
 
 import logging
 import time
+from fnmatch import fnmatchcase
 from threading import Lock
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +14,7 @@ from app.utils.errors import safe_llm_error
 from app.utils.math_tools import MathTools
 
 logger = logging.getLogger(__name__)
+_warned_missing_stream_usage = False
 
 if TYPE_CHECKING:
     from app.services.llm_credential_resolver import ResolvedProvider
@@ -364,6 +366,9 @@ class LLMService:
             if not content:
                 continue
             source_label = str(chunk.get("source_label") or chunk.get("filename") or f"学习资料片段 {index}")
+            if chunk.get("origin") == "web":
+                url = str(chunk.get("url") or "").strip()
+                source_label = f"网络来源: {source_label}" + (f" ({url})" if url else "")
             score = chunk.get("score")
             score_text = f" · score {float(score):.3f}" if isinstance(score, int | float) else ""
             lines.append(f"[{index}] {source_label}{score_text}")
@@ -472,13 +477,55 @@ class LLMService:
                     self._clients[provider] = client
         return client
 
+    @staticmethod
+    def _configured_unsupported_chat_params_by_model() -> list[tuple[str, set[str]]]:
+        raw_config = str(getattr(settings, "LLM_UNSUPPORTED_CHAT_PARAMS_BY_MODEL", "") or "")
+        rules: list[tuple[str, set[str]]] = []
+        for raw_rule in raw_config.replace("\n", ";").split(";"):
+            if ":" not in raw_rule:
+                continue
+            raw_pattern, raw_params = raw_rule.split(":", 1)
+            pattern = raw_pattern.strip().lower()
+            params = {param.strip() for param in raw_params.split(",") if param.strip()}
+            if pattern and params:
+                rules.append((pattern, params))
+        return rules
+
+    def _unsupported_chat_params_for_model(self, model: str | None) -> set[str]:
+        if not model:
+            return set()
+
+        normalized_model = model.lower()
+        unsupported: set[str] = set()
+        for pattern, params in self._configured_unsupported_chat_params_by_model():
+            if fnmatchcase(normalized_model, pattern):
+                unsupported.update(params)
+        return unsupported
+
+    def _sanitize_chat_completion_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        sanitized = dict(kwargs)
+        unsupported_params = self._unsupported_chat_params_for_model(str(sanitized.get("model") or "") or None)
+        removed_params = sorted(param for param in unsupported_params if param in sanitized)
+        for param in removed_params:
+            sanitized.pop(param, None)
+
+        if removed_params:
+            logger.info(
+                "Removed unsupported LLM chat parameter(s) for model %s: %s",
+                sanitized.get("model"),
+                ", ".join(removed_params),
+            )
+
+        return sanitized
+
     def _create_chat_completion(self, client: OpenAI, **kwargs) -> tuple[str, dict[str, int | None]]:
         """Call chat completions in streaming mode and aggregate content plus usage."""
-        stream_kwargs = {**kwargs, "stream": True, "stream_options": {"include_usage": True}}
+        sanitized_kwargs = self._sanitize_chat_completion_kwargs(kwargs)
+        stream_kwargs = {**sanitized_kwargs, "stream": True, "stream_options": {"include_usage": True}}
         try:
             stream = client.chat.completions.create(**stream_kwargs)
         except Exception:
-            fallback_kwargs = {**kwargs, "stream": True}
+            fallback_kwargs = {**sanitized_kwargs, "stream": True}
             stream = client.chat.completions.create(**fallback_kwargs)
 
         content_parts: list[str] = []
@@ -500,6 +547,12 @@ class LLMService:
             delta_content = getattr(delta, "content", None)
             if delta_content is not None:
                 content_parts.append(delta_content)
+
+        if not usage_payload:
+            global _warned_missing_stream_usage
+            if not _warned_missing_stream_usage:
+                logger.warning("LLM provider did not return stream usage; token analytics are unavailable")
+                _warned_missing_stream_usage = True
 
         return "".join(content_parts), usage_payload
 
