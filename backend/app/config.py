@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     BKT_MIN_HALF_LIFE_DAYS: float = 3.0
     BKT_MAX_HALF_LIFE_DAYS: float = 45.0
     REVIEW_MASTERY_THRESHOLD: float = 0.55
+    WEB_SEARCH_PROVIDER: str = "tavily"
+    WEB_SEARCH_API_KEY: str | None = None
+    WEB_SEARCH_PROXY: str | None = None
+    WEB_SEARCH_MAX_RESULTS: int = 3
+    WEB_SEARCH_TIMEOUT: float = 8.0
+    RAG_MIN_SCORE: float = 0.35
 
     # OpenAI-compatible chat providers
     DEEPSEEK_API_KEY: str | None = None

@@ -19,4 +19,5 @@ loguru==0.7.2
 passlib[argon2]==1.7.4
 PyJWT==2.13.0
 cryptography==48.0.1
+APScheduler==3.10.4
 

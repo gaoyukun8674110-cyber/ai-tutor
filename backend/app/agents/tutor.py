@@ -61,6 +61,15 @@ class TutorAgent(BaseAgent):
 
     def run(self, ctx: AgentContext, payload: dict[str, Any]) -> AgentResult:
         tutor_context = dict(payload.get("tutor_context") or {})
+        used_tools = list(tutor_context.get("used_tools") or [])
+        learner_snapshot = dict(tutor_context.get("learner_snapshot") or ctx.learner_snapshot or {})
+        if not learner_snapshot and ctx.student_id and ctx.tools and ctx.tools.has("learner_store"):
+            learner_snapshot = ctx.tools.get("learner_store").snapshot(ctx.student_id)
+            if "learner_store" not in used_tools:
+                used_tools.append("learner_store")
+        if learner_snapshot:
+            tutor_context["learner_snapshot"] = learner_snapshot
+
         signals = {**ctx.signals, **dict(tutor_context.get("signals") or {})}
         teaching_strategy = TeachingPolicy.select(
             error_type=tutor_context.get("error_type"),
@@ -70,6 +79,8 @@ class TutorAgent(BaseAgent):
         tutor_context["teaching_strategy"] = teaching_strategy
         if signals:
             tutor_context["signals"] = signals
+        if used_tools:
+            tutor_context["used_tools"] = used_tools
 
         requested_prompt_profile = str(payload.get("prompt_profile") or "three_stage")
         prompt_profile = (
@@ -93,13 +104,14 @@ class TutorAgent(BaseAgent):
         if "error" not in result:
             result["agent_type"] = "tutor"
             result["teaching_strategy"] = teaching_strategy
-            result["used_tools"] = []
-            result["web_search_used"] = False
+            result["used_tools"] = used_tools
+            result["web_search_used"] = "web_search" in used_tools
+            result["learner_snapshot"] = learner_snapshot
 
         return AgentResult(
             content=result.get("message", {}).get("content"),
-            state_updates={"teaching_strategy": teaching_strategy},
-            used_tools=[],
+            state_updates={"teaching_strategy": teaching_strategy, "learner_snapshot": learner_snapshot},
+            used_tools=used_tools,
             agent_type="tutor",
             raw=result,
         )

@@ -366,6 +366,9 @@ class LLMService:
             if not content:
                 continue
             source_label = str(chunk.get("source_label") or chunk.get("filename") or f"学习资料片段 {index}")
+            if chunk.get("origin") == "web":
+                url = str(chunk.get("url") or "").strip()
+                source_label = f"网络来源: {source_label}" + (f" ({url})" if url else "")
             score = chunk.get("score")
             score_text = f" · score {float(score):.3f}" if isinstance(score, int | float) else ""
             lines.append(f"[{index}] {source_label}{score_text}")

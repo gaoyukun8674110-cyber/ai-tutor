@@ -23,7 +23,7 @@ class Orchestrator:
         self.diagnostician = DiagnosticianAgent(llm)
         self.grader = GraderAgent(llm.math_tools)
         self.planner = PlannerAgent()
-        self.reviewer = ReviewerAgent()
+        self.reviewer = ReviewerAgent(llm)
 
     def run_chat(
         self,
@@ -36,12 +36,13 @@ class Orchestrator:
         tutor_context: dict[str, Any],
         agent_type: str | None,
         user_id: str,
+        student_id: int | None,
         session_id: int | None,
         analytics: Any,
     ) -> dict[str, Any]:
         ctx = AgentContext(
             user_id=user_id,
-            student_id=None,
+            student_id=student_id,
             session_id=session_id,
             learner_snapshot=dict(tutor_context.get("learner_snapshot") or {}),
             signals=dict(tutor_context.get("signals") or {}),
