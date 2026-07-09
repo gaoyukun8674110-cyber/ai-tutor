@@ -391,12 +391,9 @@ export function TutorChatWorkspace({
                   className="leading-tight tracking-normal"
                   style={{
                     fontSize: 40,
-                    fontFamily:
-                      language === 'zh'
-                        ? '"STXingkai", "KaiTi", "Kaiti SC", "KaiTi TC", "SimKai", serif'
-                        : '"Georgia", "Times New Roman", serif',
-                    fontWeight: 400,
-                    letterSpacing: 0,
+                    fontFamily: "'Noto Serif SC', 'Songti SC', 'Georgia', serif",
+                    fontWeight: 600,
+                    letterSpacing: '0.01em',
                     color: tokens.textPrimary,
                   }}
                 >

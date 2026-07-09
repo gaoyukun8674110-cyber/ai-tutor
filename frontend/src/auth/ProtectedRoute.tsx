@@ -6,7 +6,7 @@ export function ProtectedRoute() {
   const location = useLocation();
 
   if (isBootstrapping) {
-    return <div className="min-h-screen bg-slate-950" />;
+    return <div className="min-h-screen" style={{ background: 'var(--ai-page-gradient)' }} />;
   }
 
   if (!user) {

@@ -1,116 +1,137 @@
 @import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700;900&family=Noto+Sans+SC:wght@400;500;600&display=swap');
 
+/*
+ * 砚思 · Inkwell Tutor —— 宣纸与松烟主题
+ * 宣纸灰底 / 松烟墨字 / 青瓷绿为主强调 / 朱砂只在 agent 主动落印 / 旧铜点缀数据。
+ * 强调色刻意避开常见的赤陶橙+海军蓝，改用书斋器物的青瓷。
+ */
 :root {
-  --ai-page-gradient: linear-gradient(180deg, #f5efe3 0%, #efe7d6 100%);
+  --ai-serif: 'Noto Serif SC', 'Songti SC', 'Georgia', serif;
+  --ai-sans: 'Inter', 'Noto Sans SC', 'Segoe UI', sans-serif;
+
+  --ai-page-gradient: linear-gradient(180deg, #f1ece1 0%, #ebe4d6 100%);
   --ai-overlay-gradient: radial-gradient(
-    circle at 50% 0%,
-    rgba(212, 165, 116, 0.06),
-    transparent 60%
-  );
-  --ai-surface: #ffffff;
-  --ai-surface-muted: #f9f4e9;
-  --ai-surface-accent: #f0e8d6;
-  --ai-surface-elevated: #ffffff;
-  --ai-input-surface: #fffefb;
-  --ai-hover-surface: #f0e8d6;
-  --ai-disabled-surface: #e8e0cd;
-  --ai-border-soft: rgba(120, 100, 70, 0.12);
-  --ai-border-strong: rgba(120, 100, 70, 0.25);
-  --ai-border-subtle: rgba(120, 100, 70, 0.08);
-  --ai-text-primary: #2b2620;
-  --ai-text-secondary: #5e5448;
-  --ai-text-muted: #8a7d6b;
-  --ai-text-inverted: #f5efe3;
-  --ai-disabled-text: #b5ac9d;
-  --ai-placeholder-text: #a89e8b;
-  --ai-shadow: 0 12px 40px rgba(80, 60, 20, 0.08), 0 2px 8px rgba(80, 60, 20, 0.04);
-  --ai-shadow-soft: 0 4px 16px rgba(80, 60, 20, 0.06);
-  --ai-accent-primary: #1e3a5f;
-  --ai-accent-primary-soft: #e8edf5;
-  --ai-accent-secondary: #a0522d;
-  --ai-accent-secondary-soft: #f5e8dc;
-  --ai-success: #4a7c59;
-  --ai-success-soft: #e4efe3;
-  --ai-warning: #b87333;
-  --ai-warning-soft: #f5e8d5;
-  --ai-danger: #a63a3a;
-  --ai-danger-soft: #f0dcdc;
-  --ai-info: #1e3a5f;
-  --ai-info-soft: #e8edf5;
-  --ai-chart-grid: #e0d5be;
-  --ai-chart-axis: #c2b69b;
-  --ai-chart-tooltip-bg: rgba(255, 251, 240, 0.96);
-  --ai-chat-user-bubble: #1e3a5f;
-  --ai-chat-user-border: #1e3a5f;
-  --ai-chat-user-text: #f5efe3;
-  --ai-chat-assistant-bubble: #ffffff;
-  --ai-chat-assistant-border: #e0d5be;
-  --ai-chat-assistant-text: #2b2620;
-  --ai-source-surface: #f9f4e9;
-  --ai-source-border: #e0d5be;
-  --ai-source-text: #2b2620;
-  --ai-code-surface: #2b2620;
-  --ai-code-text: #f5efe3;
-  --ai-primary-action-gradient: linear-gradient(135deg, #1e3a5f 0%, #2c4f7f 100%);
-  --ai-progress-gradient: linear-gradient(90deg, #a0522d 0%, #b87333 100%);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      circle at 82% -6%,
+      rgba(94, 122, 110, 0.08),
+      transparent 46%
+    ),
+    radial-gradient(circle at 4% 108%, rgba(176, 141, 87, 0.06), transparent 42%);
+  --ai-surface: #fbf8f1;
+  --ai-surface-muted: #f4efe4;
+  --ai-surface-accent: #ebe4d5;
+  --ai-surface-elevated: #fdfbf6;
+  --ai-input-surface: #fdfbf6;
+  --ai-hover-surface: #ece5d6;
+  --ai-disabled-surface: #e3dccb;
+  --ai-border-soft: rgba(60, 66, 60, 0.14);
+  --ai-border-strong: rgba(60, 66, 60, 0.26);
+  --ai-border-subtle: rgba(60, 66, 60, 0.08);
+  --ai-text-primary: #20242a;
+  --ai-text-secondary: #4b4f56;
+  --ai-text-muted: #7c8088;
+  --ai-text-inverted: #f3efe6;
+  --ai-disabled-text: #a9a99e;
+  --ai-placeholder-text: #9a9a90;
+  --ai-shadow: 0 1px 0 rgba(255, 255, 255, 0.55) inset, 0 14px 40px rgba(70, 62, 40, 0.09);
+  --ai-shadow-soft: 0 6px 20px rgba(70, 62, 40, 0.07);
+  --ai-accent-primary: #5e7a6e;
+  --ai-accent-primary-soft: #dfe7e0;
+  --ai-accent-secondary: #b08d57;
+  --ai-accent-secondary-soft: #efe5d2;
+  --ai-success: #5e7a6e;
+  --ai-success-soft: #dfe7e0;
+  --ai-warning: #b08d57;
+  --ai-warning-soft: #efe5d2;
+  --ai-danger: #9e4a3c;
+  --ai-danger-soft: #ecd9d3;
+  --ai-info: #5e7a6e;
+  --ai-info-soft: #dfe7e0;
+  --ai-chart-grid: #ddd5c4;
+  --ai-chart-axis: #c1b8a4;
+  --ai-chart-tooltip-bg: rgba(251, 248, 241, 0.97);
+  --ai-chat-user-bubble: #465e54;
+  --ai-chat-user-border: #465e54;
+  --ai-chat-user-text: #f1efe6;
+  --ai-chat-assistant-bubble: #fbf8f1;
+  --ai-chat-assistant-border: #ddd5c4;
+  --ai-chat-assistant-text: #20242a;
+  --ai-source-surface: #f4efe4;
+  --ai-source-border: #ddd5c4;
+  --ai-source-text: #20242a;
+  --ai-code-surface: #20242a;
+  --ai-code-text: #f1efe6;
+  --ai-primary-action-gradient: linear-gradient(135deg, #465e54 0%, #5e7a6e 100%);
+  --ai-progress-gradient: linear-gradient(90deg, #5e7a6e 0%, #6f8c7e 100%);
+
+  /* agent 主动行为的朱砂印记 —— 只在诊断/复盘/查证时出现 */
+  --ai-seal: #9e4a3c;
+  --ai-seal-soft: #ecd9d3;
+  --ai-seal-wash: #f6ece8;
+
+  font-family: var(--ai-sans);
   color: var(--ai-text-primary);
-  background-color: #f5efe3;
+  background-color: #f1ece1;
 }
 
 body[data-theme='dark'] {
-  --ai-page-gradient: linear-gradient(180deg, #0f1822 0%, #131c28 100%);
+  --ai-page-gradient: linear-gradient(180deg, #14171b 0%, #191d22 100%);
   --ai-overlay-gradient: radial-gradient(
-    circle at 30% 20%,
-    rgba(212, 165, 116, 0.05),
-    transparent 60%
-  );
-  --ai-surface: #1a2433;
-  --ai-surface-muted: #1f2a3b;
-  --ai-surface-accent: #2a3548;
-  --ai-surface-elevated: #20293a;
-  --ai-input-surface: #161f2c;
-  --ai-hover-surface: #2a3548;
-  --ai-disabled-surface: #2a3140;
-  --ai-border-soft: rgba(212, 180, 130, 0.12);
-  --ai-border-strong: rgba(212, 180, 130, 0.22);
-  --ai-border-subtle: rgba(212, 180, 130, 0.08);
-  --ai-text-primary: #e8dfc9;
-  --ai-text-secondary: #b5a98a;
-  --ai-text-muted: #8a8068;
-  --ai-text-inverted: #0f1822;
-  --ai-disabled-text: #6b6450;
-  --ai-placeholder-text: #7a715a;
-  --ai-shadow: 0 16px 56px rgba(0, 0, 0, 0.5);
-  --ai-shadow-soft: 0 6px 20px rgba(0, 0, 0, 0.35);
-  --ai-accent-primary: #8fb4d9;
-  --ai-accent-primary-soft: rgba(143, 180, 217, 0.14);
-  --ai-accent-secondary: #d4a574;
-  --ai-accent-secondary-soft: rgba(212, 165, 116, 0.16);
-  --ai-success: #7fb07f;
-  --ai-success-soft: rgba(127, 176, 127, 0.16);
-  --ai-warning: #dda967;
-  --ai-warning-soft: rgba(221, 169, 103, 0.16);
-  --ai-danger: #d17878;
-  --ai-danger-soft: rgba(209, 120, 120, 0.16);
-  --ai-info: #8fb4d9;
-  --ai-info-soft: rgba(143, 180, 217, 0.14);
-  --ai-chart-grid: #2f3b50;
-  --ai-chart-axis: #3d4a60;
-  --ai-chart-tooltip-bg: rgba(26, 36, 51, 0.96);
-  --ai-chat-user-bubble: #2c4768;
-  --ai-chat-user-border: rgba(143, 180, 217, 0.35);
-  --ai-chat-user-text: #e8dfc9;
-  --ai-chat-assistant-bubble: #1f2a3b;
-  --ai-chat-assistant-border: rgba(212, 180, 130, 0.16);
-  --ai-chat-assistant-text: #e8dfc9;
-  --ai-source-surface: rgba(212, 165, 116, 0.1);
-  --ai-source-border: rgba(212, 165, 116, 0.22);
-  --ai-source-text: #e8dfc9;
-  --ai-code-surface: #0b121c;
-  --ai-code-text: #e8dfc9;
-  --ai-primary-action-gradient: linear-gradient(135deg, #2c4768 0%, #3a5680 100%);
-  --ai-progress-gradient: linear-gradient(90deg, #d4a574 0%, #c2925e 100%);
+      circle at 82% -4%,
+      rgba(122, 156, 140, 0.08),
+      transparent 46%
+    ),
+    radial-gradient(circle at 4% 108%, rgba(176, 141, 87, 0.06), transparent 42%);
+  --ai-surface: #20252b;
+  --ai-surface-muted: #1b2026;
+  --ai-surface-accent: #262c33;
+  --ai-surface-elevated: #242a31;
+  --ai-input-surface: #1a1f24;
+  --ai-hover-surface: #2b323a;
+  --ai-disabled-surface: #2a3037;
+  --ai-border-soft: rgba(196, 206, 190, 0.12);
+  --ai-border-strong: rgba(196, 206, 190, 0.22);
+  --ai-border-subtle: rgba(196, 206, 190, 0.07);
+  --ai-text-primary: #e7e3d6;
+  --ai-text-secondary: #b3b0a2;
+  --ai-text-muted: #85837a;
+  --ai-text-inverted: #14171b;
+  --ai-disabled-text: #64645b;
+  --ai-placeholder-text: #74736a;
+  --ai-shadow: 0 18px 56px rgba(0, 0, 0, 0.5);
+  --ai-shadow-soft: 0 8px 24px rgba(0, 0, 0, 0.38);
+  --ai-accent-primary: #8fb0a1;
+  --ai-accent-primary-soft: rgba(143, 176, 161, 0.15);
+  --ai-accent-secondary: #cba36a;
+  --ai-accent-secondary-soft: rgba(203, 163, 106, 0.16);
+  --ai-success: #8fb0a1;
+  --ai-success-soft: rgba(143, 176, 161, 0.15);
+  --ai-warning: #cba36a;
+  --ai-warning-soft: rgba(203, 163, 106, 0.16);
+  --ai-danger: #cd7a68;
+  --ai-danger-soft: rgba(205, 122, 104, 0.16);
+  --ai-info: #8fb0a1;
+  --ai-info-soft: rgba(143, 176, 161, 0.15);
+  --ai-chart-grid: #2c333b;
+  --ai-chart-axis: #3b434c;
+  --ai-chart-tooltip-bg: rgba(32, 37, 43, 0.97);
+  --ai-chat-user-bubble: #3a4f46;
+  --ai-chat-user-border: rgba(143, 176, 161, 0.32);
+  --ai-chat-user-text: #e7e3d6;
+  --ai-chat-assistant-bubble: #20252b;
+  --ai-chat-assistant-border: rgba(196, 206, 190, 0.14);
+  --ai-chat-assistant-text: #e7e3d6;
+  --ai-source-surface: rgba(203, 163, 106, 0.09);
+  --ai-source-border: rgba(203, 163, 106, 0.2);
+  --ai-source-text: #e7e3d6;
+  --ai-code-surface: #0e1216;
+  --ai-code-text: #e7e3d6;
+  --ai-primary-action-gradient: linear-gradient(135deg, #3a4f46 0%, #4c6559 100%);
+  --ai-progress-gradient: linear-gradient(90deg, #6f8c7e 0%, #8fb0a1 100%);
+
+  --ai-seal: #cd7a68;
+  --ai-seal-soft: rgba(205, 122, 104, 0.18);
+  --ai-seal-wash: rgba(205, 122, 104, 0.1);
 }
 
 * {

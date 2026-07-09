@@ -152,12 +152,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     () =>
       language === 'zh'
         ? {
-            fontFamily: '"STXingkai", "KaiTi", "Kaiti SC", "KaiTi TC", "SimKai", serif',
+            fontFamily: "'Inter', 'Noto Sans SC', 'Segoe UI', sans-serif",
             fontStyle: 'normal' as const,
           }
         : {
-            fontFamily: '"Georgia", "Times New Roman", serif',
-            fontStyle: 'italic' as const,
+            fontFamily: "'Inter', 'Noto Sans SC', 'Segoe UI', sans-serif",
+            fontStyle: 'normal' as const,
           },
     [language],
   );
