@@ -18,6 +18,12 @@ services:
   backend:
     build:
       context: ./backend
+    # Inject runtime secrets (JWT_SECRET, WEB_SEARCH_API_KEY, LLM provider keys,
+    # LLM_CREDENTIAL_ENCRYPTION_KEY, ...) from the project-dir .env file. Values
+    # set explicitly under `environment:` below still take precedence, so the
+    # container keeps the correct in-cluster DATABASE_URL / RAG_* overrides.
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql+psycopg://tutor:tutor@db:5432/tutor
       RAG_UPLOAD_DIR: /data/storage/materials
