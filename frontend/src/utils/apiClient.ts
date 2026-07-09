@@ -7,8 +7,27 @@ export interface ApiRequestOptions extends RequestInit {
 
 type UiLanguage = 'zh' | 'en';
 
-let accessToken: string | null = null;
-let refreshInFlight: Promise<string | null> | null = null;
+// All mutable auth state lives in a single object so it can be reset atomically
+// via resetApiClientState(). In production the singleton semantics are correct:
+// one shared access token and one de-duplicated in-flight refresh per app. The
+// reset entry point exists so tests — which share this module instance across
+// files within a worker — can restore a clean slate between cases instead of
+// inheriting a leaked token or a foreign in-flight refresh promise.
+interface AuthState {
+  accessToken: string | null;
+  refreshInFlight: Promise<string | null> | null;
+}
+
+const authState: AuthState = {
+  accessToken: null,
+  refreshInFlight: null,
+};
+
+/** Reset all module-level auth state to its initial values. */
+export function resetApiClientState(): void {
+  authState.accessToken = null;
+  authState.refreshInFlight = null;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -29,11 +48,11 @@ export function isAbortError(error: unknown): boolean {
 }
 
 export function setAccessToken(token: string | null): void {
-  accessToken = token;
+  authState.accessToken = token;
 }
 
 export function getAccessToken(): string | null {
-  return accessToken;
+  return authState.accessToken;
 }
 
 function getCurrentUiLanguage(): UiLanguage {
@@ -135,7 +154,7 @@ function isAuthPath(path: string): boolean {
   return path.startsWith('/api/auth/');
 }
 
-function buildHeaders(options: ApiRequestOptions, token = accessToken): Headers {
+function buildHeaders(options: ApiRequestOptions, token = authState.accessToken): Headers {
   const headers = new Headers(options.headers);
   if (!headers.has('Content-Type') && typeof options.body === 'string') {
     headers.set('Content-Type', 'application/json');
@@ -150,9 +169,9 @@ function buildHeaders(options: ApiRequestOptions, token = accessToken): Headers 
 }
 
 export async function refreshAccessToken(): Promise<string | null> {
-  if (refreshInFlight) return refreshInFlight;
+  if (authState.refreshInFlight) return authState.refreshInFlight;
 
-  refreshInFlight = (async () => {
+  authState.refreshInFlight = (async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
         method: 'POST',
@@ -160,27 +179,27 @@ export async function refreshAccessToken(): Promise<string | null> {
         headers: { 'Accept-Language': getAcceptLanguageValue(getCurrentUiLanguage()) },
       });
       if (!response.ok) {
-        accessToken = null;
+        authState.accessToken = null;
         return null;
       }
       const payload = await parseJsonResponse<{ access_token: string }>(response);
-      accessToken = payload.access_token;
-      return accessToken;
+      authState.accessToken = payload.access_token;
+      return authState.accessToken;
     } catch {
-      accessToken = null;
+      authState.accessToken = null;
       return null;
     } finally {
-      refreshInFlight = null;
+      authState.refreshInFlight = null;
     }
   })();
 
-  return refreshInFlight;
+  return authState.refreshInFlight;
 }
 
 async function fetchWithHeaders(
   path: string,
   options: ApiRequestOptions,
-  token = accessToken,
+  token = authState.accessToken,
 ): Promise<Response> {
   return fetch(`${API_BASE_URL}${path}`, {
     ...options,
