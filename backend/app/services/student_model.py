@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.models.question import QuestionSkill
 from app.models.student import Student, StudentMastery
+from app.services.knowledge_tracing import KnowledgeTracingService
 
 
 class StudentModelService:
@@ -15,6 +16,7 @@ class StudentModelService:
 
     def __init__(self, db: Session):
         self.db = db
+        self.knowledge_tracing = KnowledgeTracingService()
 
     def get_or_create_student(self, user_id: str, username: str | None = None) -> Student:
         """获取或创建学生"""
@@ -71,7 +73,6 @@ class StudentModelService:
         for qs in question_skills:
             skill_id = qs.skill_id
             skill_name = qs.skill_name
-            weight = qs.weight
 
             # 获取或创建掌握度记录
             mastery = self.get_mastery(student_id, skill_id)
@@ -90,17 +91,18 @@ class StudentModelService:
             if is_correct:
                 mastery.total_correct += 1
 
-            # 计算掌握度分数（简单模型，v1）
-            # 可以后续升级为 BKT/DKT 等
-            mastery_score = self._calculate_mastery_score(
-                mastery.total_attempts,
-                mastery.total_correct,
-                is_correct,
-                time_spent,
-                hint_count,
-                mastery.mastery_score,
-                weight,
+            prior_p_known = mastery.bkt_p_known
+            if prior_p_known is None and mastery.total_attempts > 1:
+                prior_p_known = mastery.mastery_score
+            mastery_update = self.knowledge_tracing.update_mastery(
+                prior_p_known=prior_p_known,
+                is_correct=is_correct,
+                last_practiced_at=mastery.last_practiced_at,
             )
+            mastery.bkt_p_known = mastery_update["p_known"]
+            mastery.bkt_half_life = mastery_update["half_life_days"]
+            mastery.last_decay_at = now
+            mastery_score = mastery_update["effective_mastery"]
             mastery.mastery_score = mastery_score
 
             # 更新平均用时（移动平均）
@@ -128,6 +130,8 @@ class StudentModelService:
                     "skill_id": skill_id,
                     "skill_name": skill_name,
                     "mastery_score": mastery_score,
+                    "bkt_p_known": mastery.bkt_p_known,
+                    "bkt_half_life": mastery.bkt_half_life,
                 }
             )
 
@@ -190,9 +194,11 @@ class StudentModelService:
         recommended = []
         review_skills = []
         too_hard_skills = []
+        effective_scores: dict[str, float] = {}
 
         for mastery in masteries:
-            score = mastery.mastery_score
+            score = self._effective_mastery_score(mastery)
+            effective_scores[mastery.skill_id] = score
 
             if score < 0.3:
                 # 掌握度很低，可能太难
@@ -226,14 +232,30 @@ class StudentModelService:
         if target_skills:
             target_masteries = [m for m in masteries if m.skill_id in target_skills]
             if target_masteries:
-                recommended = target_masteries
+                recommended = [
+                    {
+                        "skill_id": m.skill_id,
+                        "skill_name": m.skill_name,
+                        "mastery_score": effective_scores.get(m.skill_id, self._effective_mastery_score(m)),
+                    }
+                    for m in target_masteries
+                ]
 
         return {
             "recommended_skills": [s["skill_id"] for s in recommended],
             "review_skills": [s["skill_id"] for s in review_skills],
             "too_hard_skills": [s["skill_id"] for s in too_hard_skills],
-            "mastery_map": {m.skill_id: m.mastery_score for m in masteries},
+            "mastery_map": effective_scores,
         }
+
+    def _effective_mastery_score(self, mastery: StudentMastery) -> float:
+        if mastery.bkt_p_known is None:
+            return mastery.mastery_score
+        return self.knowledge_tracing.apply_decay(
+            mastery.bkt_p_known,
+            last_practiced_at=mastery.last_practiced_at,
+            half_life_days=mastery.bkt_half_life,
+        )
 
     def get_learning_report(self, student_id: int) -> dict[str, Any]:
         """获取学习报告"""
@@ -244,21 +266,22 @@ class StudentModelService:
             return {}
 
         # 按掌握度排序
-        sorted_masteries = sorted(masteries, key=lambda m: m.mastery_score)
+        sorted_masteries = sorted(masteries, key=self._effective_mastery_score)
 
         # 找出弱项（掌握度最低的3个）
         weak_skills = [
             {
                 "skill_id": m.skill_id,
                 "skill_name": m.skill_name,
-                "mastery_score": m.mastery_score,
+                "mastery_score": self._effective_mastery_score(m),
             }
             for m in sorted_masteries[:3]
         ]
 
         # 计算总体统计
         total_skills = len(masteries)
-        avg_mastery = sum(m.mastery_score for m in masteries) / total_skills if total_skills > 0 else 0.0
+        effective_scores = [self._effective_mastery_score(m) for m in masteries]
+        avg_mastery = sum(effective_scores) / total_skills if total_skills > 0 else 0.0
 
         return {
             "student_id": student_id,
@@ -266,10 +289,10 @@ class StudentModelService:
             "average_mastery": avg_mastery,
             "weak_skills": weak_skills,
             "mastery_distribution": {
-                "excellent": len([m for m in masteries if m.mastery_score >= 0.8]),
-                "good": len([m for m in masteries if 0.6 <= m.mastery_score < 0.8]),
-                "fair": len([m for m in masteries if 0.4 <= m.mastery_score < 0.6]),
-                "poor": len([m for m in masteries if m.mastery_score < 0.4]),
+                "excellent": len([score for score in effective_scores if score >= 0.8]),
+                "good": len([score for score in effective_scores if 0.6 <= score < 0.8]),
+                "fair": len([score for score in effective_scores if 0.4 <= score < 0.6]),
+                "poor": len([score for score in effective_scores if score < 0.4]),
             },
             "total_sessions": student.total_sessions,
             "total_questions": student.total_questions,

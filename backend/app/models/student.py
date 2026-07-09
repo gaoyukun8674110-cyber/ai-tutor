@@ -1,6 +1,6 @@
 """学生相关数据模型"""
 
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 
 from app.database import Base
@@ -42,6 +42,9 @@ class StudentMastery(Base):
 
     # 掌握度数据
     mastery_score = Column(Float, default=0.0)  # 掌握度分数 (0-1 或 0-100)
+    bkt_p_known = Column(Float, nullable=True)
+    bkt_half_life = Column(Float, nullable=True)
+    last_decay_at = Column(String(50), nullable=True)
 
     # 历史统计
     total_attempts = Column(Integer, default=0)  # 总尝试次数
@@ -56,6 +59,33 @@ class StudentMastery(Base):
     updated_at = Column(String(50), nullable=False)
 
     student = relationship("Student", back_populates="masteries")
+
+
+class LearnerProfile(Base):
+    """长期学习画像与主动复盘配置"""
+
+    __tablename__ = "learner_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False, unique=True, index=True)
+    learning_style = Column(JSON, nullable=False, default=dict)
+    review_enabled = Column(Boolean, default=True, nullable=False)
+    review_frequency = Column(String(50), default="weekly", nullable=False)
+    confidence_calibration = Column(JSON, nullable=False, default=dict)
+    updated_at = Column(String(50), nullable=False)
+
+
+class ReviewReport(Base):
+    """周期性复盘报告"""
+
+    __tablename__ = "review_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    student_id = Column(Integer, ForeignKey("students.id"), nullable=False, index=True)
+    period = Column(String(100), nullable=False, index=True)
+    report = Column(JSON, nullable=False, default=dict)
+    created_at = Column(String(50), nullable=False)
+    acknowledged = Column(Boolean, default=False, nullable=False)
 
 
 class StudentAnswer(Base):

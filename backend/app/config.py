@@ -25,7 +25,15 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str = "gpt-4-turbo-preview"
     OPENAI_TEMPERATURE: float = 0.7
     OPENAI_MAX_TOKENS: int = 2000
+    LLM_UNSUPPORTED_CHAT_PARAMS_BY_MODEL: str = "gpt-5*:temperature"
     DEFAULT_LLM_PROVIDER: str = "auto"
+    BKT_INITIAL_KNOWLEDGE: float = 0.25
+    BKT_LEARN_RATE: float = 0.12
+    BKT_SLIP_RATE: float = 0.1
+    BKT_GUESS_RATE: float = 0.2
+    BKT_MIN_HALF_LIFE_DAYS: float = 3.0
+    BKT_MAX_HALF_LIFE_DAYS: float = 45.0
+    REVIEW_MASTERY_THRESHOLD: float = 0.55
 
     # OpenAI-compatible chat providers
     DEEPSEEK_API_KEY: str | None = None

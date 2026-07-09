@@ -18,6 +18,7 @@ def load_llm_module():
         OPENAI_MODEL="gpt-4o-mini",
         OPENAI_TEMPERATURE=0.7,
         OPENAI_MAX_TOKENS=2000,
+        LLM_UNSUPPORTED_CHAT_PARAMS_BY_MODEL="gpt-5*:temperature",
         DEEPSEEK_API_KEY=None,
         DEEPSEEK_BASE_URL="https://api.deepseek.com/v1",
         DEEPSEEK_MODEL="deepseek-chat",
@@ -362,7 +363,65 @@ class LLMChatTests(unittest.TestCase):
         call = client.chat.completions.calls[0]
         self.assertIs(call["stream"], True)
         self.assertEqual(call["stream_options"], {"include_usage": True})
+        self.assertEqual(call["temperature"], 0.1)
         self.assertEqual(call["timeout"], 60)
+
+    def test_create_chat_completion_removes_temperature_for_gpt5_models(self):
+        service = LLMService()
+        client = FakeOpenAIClient()
+
+        content, usage = service._create_chat_completion(
+            client,
+            model="gpt-5.5",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.7,
+            max_tokens=60,
+        )
+
+        self.assertEqual(content, "streamed response")
+        self.assertEqual(usage, {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20})
+        call = client.chat.completions.calls[0]
+        self.assertEqual(call["model"], "gpt-5.5")
+        self.assertEqual(call["messages"], [{"role": "user", "content": "hello"}])
+        self.assertEqual(call["max_tokens"], 60)
+        self.assertIs(call["stream"], True)
+        self.assertEqual(call["stream_options"], {"include_usage": True})
+        self.assertNotIn("temperature", call)
+
+    def test_create_chat_completion_keeps_temperature_for_supported_models(self):
+        service = LLMService()
+        client = FakeOpenAIClient()
+
+        service._create_chat_completion(
+            client,
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": "hello"}],
+            temperature=0.7,
+            max_tokens=60,
+        )
+
+        call = client.chat.completions.calls[0]
+        self.assertEqual(call["temperature"], 0.7)
+
+    def test_create_chat_completion_uses_configured_unsupported_params(self):
+        service = LLMService()
+        client = FakeOpenAIClient()
+
+        with patch.object(llm_module, "settings") as fake_settings:
+            fake_settings.LLM_UNSUPPORTED_CHAT_PARAMS_BY_MODEL = "vendor-special*:temperature,top_p"
+            service._create_chat_completion(
+                client,
+                model="vendor-special-1",
+                messages=[{"role": "user", "content": "hello"}],
+                temperature=0.7,
+                top_p=0.9,
+                max_tokens=60,
+            )
+
+        call = client.chat.completions.calls[0]
+        self.assertNotIn("temperature", call)
+        self.assertNotIn("top_p", call)
+        self.assertEqual(call["max_tokens"], 60)
 
     def test_create_chat_completion_retries_without_stream_options_when_provider_rejects_it(self):
         class RejectingStreamOptionsCompletions(FakeCompletions):
@@ -395,6 +454,7 @@ class LLMChatTests(unittest.TestCase):
         fake_settings.OPENAI_MODEL = "gpt-4o-mini"
         fake_settings.OPENAI_TEMPERATURE = 0.7
         fake_settings.OPENAI_MAX_TOKENS = 2000
+        fake_settings.LLM_UNSUPPORTED_CHAT_PARAMS_BY_MODEL = "gpt-5*:temperature"
         fake_settings.DEEPSEEK_API_KEY = "secret-deepseek"
         fake_settings.DEEPSEEK_BASE_URL = "https://api.deepseek.com/v1"
         fake_settings.DEEPSEEK_MODEL = "deepseek-chat"

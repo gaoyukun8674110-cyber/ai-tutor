@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
+from app.agents import Orchestrator
 from app.api.deps import get_current_user
 from app.config import settings
 from app.database import get_db
@@ -94,6 +95,14 @@ def get_llm_service(request: Request) -> LLMService:
         llm_service = LLMService()
         request.app.state.llm_service = llm_service
     return llm_service
+
+
+def get_orchestrator(request: Request, llm: LLMService = Depends(get_llm_service)) -> Orchestrator:
+    orchestrator = getattr(request.app.state, "agent_orchestrator", None)
+    if orchestrator is None or orchestrator.llm is not llm:
+        orchestrator = Orchestrator(llm)
+        request.app.state.agent_orchestrator = orchestrator
+    return orchestrator
 
 
 def _validate_provider_for_write(provider_id: str) -> None:
@@ -636,6 +645,7 @@ async def tutor_chat(
     session_id: int | None = None,
     db: Session = Depends(get_db),
     llm: LLMService = Depends(get_llm_service),
+    orchestrator: Orchestrator = Depends(get_orchestrator),
     current_user: User = Depends(get_current_user),
 ):
     """统一 Tutor 对话入口，支持多 Provider 后端代理"""
@@ -684,7 +694,7 @@ async def tutor_chat(
 
     resolved = _resolve_provider_or_raise(db, current_user, request.provider)
     result = await run_in_threadpool(
-        llm.complete_chat,
+        orchestrator.run_chat,
         resolved=resolved,
         model=request.model,
         messages=model_messages,

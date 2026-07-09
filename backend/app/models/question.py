@@ -103,3 +103,25 @@ class PrerequisiteSkill(Base):
     prerequisite_skill_id = Column(String(100), nullable=False)  # 先修知识点ID
 
     question = relationship("Question")
+
+
+class Skill(Base):
+    """独立知识点主数据"""
+
+    __tablename__ = "skills"
+
+    skill_id = Column(String(100), primary_key=True)
+    name = Column(String(200), nullable=False)
+    chapter = Column(String(100), nullable=True)
+    description = Column(Text, nullable=True)
+
+
+class SkillEdge(Base):
+    """知识点依赖图"""
+
+    __tablename__ = "skill_edges"
+
+    id = Column(Integer, primary_key=True, index=True)
+    from_skill_id = Column(String(100), ForeignKey("skills.skill_id"), nullable=False, index=True)
+    to_skill_id = Column(String(100), ForeignKey("skills.skill_id"), nullable=False, index=True)
+    relation = Column(String(50), nullable=False, default="prerequisite")
